@@ -1,3 +1,5 @@
+from common import excluded_collections, user_folder
+
 import pandas as pd
 import os, numpy as np
 import threading
@@ -6,7 +8,6 @@ from connectors.gcloud import gcloud_connect
 from connectors import gdrive as dm
 import customtkinter as ctk
 from utils import mellanni_modules as mm
-from common import excluded_collections, user_folder
 
 BQ_BUSINESS_REPORT:str = 'reports.business_report'
 BQ_DICTIONARY:str = 'auxillary_development.dictionary'
