@@ -19,7 +19,7 @@ def export_to_excel(
         dfs: List[pd.DataFrame],
         sheet_names: List[str],
         filename: str = 'test.xlsx',
-        out_folder: Any[str,None] = None
+        out_folder: Any = None
         ) -> None:
     if not out_folder:
         out_folder = ctk.filedialog.askdirectory(title='Select output folder', initialdir=os.path.expanduser('~'))
