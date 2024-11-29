@@ -1,0 +1,12 @@
+customtkinter
+db_dtypes
+gdown
+google-api-python-client
+google-cloud
+google-cloud-storage
+google-cloud-bigquery-storage
+gspread
+openpyxl
+pandas
+pandas-gbq
+xlsxwriter
