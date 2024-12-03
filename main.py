@@ -13,11 +13,11 @@ BQ_BUSINESS_REPORT:str = 'reports.business_report'
 BQ_DICTIONARY:str = 'auxillary_development.dictionary'
 BQ_ORDERS:str = 'reports.all_orders'
 FBA_INVENTORY:str = 'reports.fba_inventory_planning'
-SALE_FILE = '1iB1CmY_XdOVA4FvLMPeiEGEcxiVEH3Bgp4FJs1iNmQs'
-PRICELIST_ID = '1VGZ5VGsQiYgX9X6PxrRREj265gMzVQu9UQMKnT_014o'
-EVENT_FILE = '1XcrMgklKRvElCb8vZI5r6j0P9ha4wmlPZdpU9MWq7QA'
-DICTIONARY_FILENAME = 'Dictionary.xlsx'
-marketplace = 'US'
+SALE_FILE:str = '1iB1CmY_XdOVA4FvLMPeiEGEcxiVEH3Bgp4FJs1iNmQs'
+PRICELIST_ID:str = '1VGZ5VGsQiYgX9X6PxrRREj265gMzVQu9UQMKnT_014o'
+EVENT_FILE:str = '1XcrMgklKRvElCb8vZI5r6j0P9ha4wmlPZdpU9MWq7QA'
+DICTIONARY_FILENAME:str = 'Dictionary.xlsx'
+marketplace:str = 'US'
 
 
 class App(ctk.CTk):
@@ -41,8 +41,12 @@ class App(ctk.CTk):
         self.button = ctk.CTkButton(self, text='GO', command=self.process_prices)
         self.button.grid(row=2, column=0, pady=10, padx=10)
 
-        self.checkbox = ctk.CTkCheckBox(self, text='Include event file?')
-        self.checkbox.grid(row=2, column=1, pady=10, padx=10)
+        ###removing the event file button
+        # self.checkbox = ctk.CTkCheckBox(self, text='Include event file?')
+        # self.checkbox.grid(row=2, column=1, pady=10, padx=10)
+
+        self.custom_file_checkbox = ctk.CTkCheckBox(self, text='Use .csv inventory file instead')
+        self.custom_file_checkbox.grid(row=2, column=1, pady=10, padx=10)
 
         self.update_button = ctk.CTkButton(self, text='Update', fg_color='gray', command=self.update)
         self.update_button.grid(row=3, column=0, pady=20)
@@ -60,7 +64,7 @@ class App(ctk.CTk):
         self.print_area.insert(ctk.END, text='Downloaded sale file\n')
         return
     
-    def download_event_file(self):
+    def download_event_file(self): #deprecated
         event_file = dm.download_gspread(spreadsheet_id=EVENT_FILE, sheet_id=1816623191, header=1)
         event_file = event_file[['SKU','non-Prime price (to be increased on 11/20)']]
         event_file = event_file.rename(columns={'non-Prime price (to be increased on 11/20)':'event_price'})
@@ -70,15 +74,28 @@ class App(ctk.CTk):
         return
     
     def download_fba_inventory(self):
-        # real usage with max date dynamically obtained
-        fba_query = f'''SELECT DATE(snapshot_date) as snapshot_date, sku as SKU, available, your_price, sales_price
-                        FROM {FBA_INVENTORY}
-                        WHERE DATE(snapshot_date) = (
-                            SELECT MAX(DATE(snapshot_date)) FROM {FBA_INVENTORY} WHERE marketplace = "{marketplace}"
-                            )
-                        AND marketplace = "{marketplace}"
-                        '''
-        fba_inv = self.client.query(fba_query).to_dataframe()
+        if self.custom_file_checkbox.get():
+            fba_inv_filename = ctk.filedialog.askopenfilename(title="Select FBA Inventory.csv file", initialdir=user_folder)
+            fba_inv = pd.read_csv(
+                fba_inv_filename,usecols=[
+                    'snapshot-date','sku','available','your-price','sales-price'
+                    ]                
+                )
+            fba_inv = fba_inv.rename(columns={
+                'snapshot-date':'snapshot_date',
+                'sku':'SKU',
+                'your-price':'your_price',
+                'sales-price':'sales_price'
+                })
+        else:
+            fba_query = f'''SELECT DATE(snapshot_date) as snapshot_date, sku as SKU, available, your_price, sales_price
+                            FROM {FBA_INVENTORY}
+                            WHERE DATE(snapshot_date) = (
+                                SELECT MAX(DATE(snapshot_date)) FROM {FBA_INVENTORY} WHERE marketplace = "{marketplace}"
+                                )
+                            AND marketplace = "{marketplace}"
+                            '''
+            fba_inv = self.client.query(fba_query).to_dataframe()
         self.result_files['fba_inventory'] = fba_inv
         self.print_area.insert(ctk.END, text='fba file downloaded\n')
         return
@@ -112,23 +129,23 @@ class App(ctk.CTk):
         price_check = pd.merge(dictionary, price_list, how = 'left', on=['collection','size'])
         price_check = pd.merge(price_check, fba_inventory, how = 'outer', on = 'SKU')
         price_check = pd.merge(price_check, sale_file, how = 'outer', on = 'SKU')
-        if self.checkbox.get():
-            price_check = pd.merge(price_check, event_file, how = 'outer', on = 'SKU')
+        # if self.checkbox.get():
+        #     price_check = pd.merge(price_check, event_file, how = 'outer', on = 'SKU')
         return price_check
     
     def process_file(self, price_check):
         self.print_area.insert(ctk.END, text='processing file\n')
         price_check_refined = price_check.copy()
-        if self.checkbox.get():
-            price_check_refined['Full price'] = price_check_refined['event_price'].combine_first(price_check_refined['Full price'])
-        price_check_refined.loc[price_check_refined['Status']=="Selling",'Target current price'] = price_check_refined['Sale price']
-        price_check_refined.loc[price_check_refined['Status']!="Selling",'Target current price'] = price_check_refined['Full price']
+        # if self.checkbox.get():
+        #     price_check_refined['Full price'] = price_check_refined['event_price'].combine_first(price_check_refined['Full price'])
+        price_check_refined.loc[price_check_refined['Status'].isin(["Selling","TEST"]),'Target current price'] = price_check_refined['Sale price']
+        price_check_refined.loc[~price_check_refined['Status'].isin(["Selling","TEST"]),'Target current price'] = price_check_refined['Full price']
     
         str_columns = ['your_price','sales_price','Full price','Sale price','Target current price']
         for str_column in str_columns:
             self.str_to_float(price_check_refined, str_column)
-        price_check_refined.loc[price_check_refined['Status']=="Selling",'Price_diff'] = price_check_refined['Target current price'] - price_check_refined['your_price']
-        price_check_refined.loc[price_check_refined['Status']!="Selling",'Price_diff'] = price_check_refined['Target current price'] - price_check_refined['your_price']
+        price_check_refined.loc[price_check_refined['Status'].isin(["Selling","TEST"]),'Price_diff'] = price_check_refined['Target current price'] - price_check_refined['your_price']
+        price_check_refined.loc[~price_check_refined['Status'].isin(["Selling","TEST"]),'Price_diff'] = price_check_refined['Target current price'] - price_check_refined['your_price']
         return price_check_refined
     
     def str_to_float(self, df, column_name):
@@ -161,8 +178,8 @@ class App(ctk.CTk):
             threading.Thread(target=self.download_dictionary, args=()),
             threading.Thread(target=self.download_price_list, args=()),
             ]
-        if self.checkbox.get():
-            threads.append(threading.Thread(target=self.download_event_file, args=()))
+        # if self.checkbox.get():
+        #     threads.append(threading.Thread(target=self.download_event_file, args=()))
 
         for thread in threads:
             thread.start()
