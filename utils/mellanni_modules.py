@@ -4,7 +4,6 @@ import pandas as pd
 import sys, subprocess
 import customtkinter as ctk
 
-
 def open_file_folder(path: str) -> None:
     try:
         os.startfile(path)
