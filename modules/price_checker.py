@@ -43,14 +43,6 @@ class App(ctk.CTk):
         self.custom_file_checkbox = ctk.CTkCheckBox(self, text='Use .csv inventory file instead')
         self.custom_file_checkbox.grid(row=2, column=1, pady=10, padx=10)
 
-        self.update_button = ctk.CTkButton(self, text='Update', fg_color='gray', command=self.update)
-        self.update_button.grid(row=3, column=0, pady=20)
-
-    def update(self):
-        import subprocess
-        subprocess.call(['git','pull'])
-        subprocess.call(['pip','install','-r','requirements.txt'])
-
     def download_sale_file(self):
         # get information from pricing (sales) file
         sale_file = dm.download_gspread(spreadsheet_id=SALE_FILE)

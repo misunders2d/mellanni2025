@@ -27,6 +27,13 @@ class MainApp(ctk.CTk):
         self.weekly_conversion_button = ctk.CTkButton(self.button_frame, text='Weekly conversion', command=self.call_weekly_conversion)
         self.weekly_conversion_button.grid(row=1, column=0, padx=self.xspacing, pady=self.yspacing)
 
+        self.update_button = ctk.CTkButton(self, text='Update', fg_color='gray', command=self.update)
+        self.update_button.grid(row=3, column=0, pady=20)
+
+    def update(self):
+        import subprocess
+        subprocess.call(['git','pull'])
+        subprocess.call(['pip','install','-r','requirements.txt'])
 
     def call_price_checker(self):
         from modules import price_checker
