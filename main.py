@@ -102,7 +102,7 @@ class App(ctk.CTk):
     
     def download_dictionary(self):
         dictionary_id = dm.find_file_id(folder_id = '1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4', drive_id = '0AMdx9NlXacARUk9PVA', filename=DICTIONARY_FILENAME)
-        dictionary = pd.read_excel(dm.download_file(dictionary_id), usecols=['SKU','Collection','Sub-collection','Size Map'])
+        dictionary = pd.read_excel(dm.download_file(dictionary_id), usecols=['SKU','Collection','Sub-collection','Size Map', 'Color'])
         dictionary = dictionary[~dictionary['Collection'].isin(excluded_collections)]
         del dictionary['Collection']
         dictionary = dictionary.rename(columns={'Sub-collection':'collection', 'Size Map':'size'})
