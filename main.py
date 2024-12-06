@@ -12,20 +12,21 @@ class MainApp(ctk.CTk):
         self.title('Mellanni tools app')
         self.executor = ThreadPoolExecutor()
 
-        self.button_frame = ctk.CTkFrame(self)
-        self.button_frame.grid(row=0, column=0, sticky='ew')
+        self.tab_view = ctk.CTkTabview(self, width=600, height=300, anchor='center')
+        self.tab_view.grid(row=0, column=0, sticky='ew')
+        self.reports_frame = self.tab_view.add('Reports')
+        self.tools_frame = self.tab_view.add('Tools')
 
-        # self.img_frame = ctk.CTkFrame(self)
-        # self.img_frame.grid(row=0, column=1, sticky='ew')
-        # self.logo = ctk.CTkImage(dark_image=logo, size=(300,100))
-        # self.logo_label = ctk.CTkLabel(self.img_frame, image=self.logo, text="")
-        # self.logo_label.grid(row=0, column=0)
-
-        self.price_check_button = ctk.CTkButton(self.button_frame, text='Price checker', command=self.call_price_checker)
+        #reports section
+        self.price_check_button = ctk.CTkButton(self.reports_frame, text='Price checker', command=self.call_price_checker)
         self.price_check_button.grid(row=0, column=0, padx=self.xspacing, pady=self.yspacing)
 
-        self.weekly_conversion_button = ctk.CTkButton(self.button_frame, text='Weekly conversion', command=self.call_weekly_conversion)
+        self.weekly_conversion_button = ctk.CTkButton(self.reports_frame, text='Weekly conversion', command=self.call_weekly_conversion)
         self.weekly_conversion_button.grid(row=1, column=0, padx=self.xspacing, pady=self.yspacing)
+
+        #tools section
+        self.coupon_helper_button = ctk.CTkButton(self.tools_frame, text='Coupon helper', command=self.call_coupon_helper)
+        self.coupon_helper_button.grid(row=0, column=0, padx=self.xspacing, pady=self.yspacing)
 
         self.update_button = ctk.CTkButton(self, text='Update', fg_color='gray', command=self.update)
         self.update_button.grid(row=3, column=0, pady=20)
@@ -45,6 +46,10 @@ class MainApp(ctk.CTk):
         self.after(200, self.destroy())
         weekly_conversion.main()
 
+    def call_coupon_helper(self):
+        from scripts import coupon_helper
+        self.after(200, self.destroy)
+        coupon_helper.main()
 if __name__ == '__main__':
     app = MainApp()
     app.mainloop()
