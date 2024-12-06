@@ -36,12 +36,12 @@ class MainApp(ctk.CTk):
         subprocess.call(['pip','install','-r','requirements.txt'])
 
     def call_price_checker(self):
-        from modules import price_checker
+        from scripts import price_checker
         self.after(200, self.destroy())
         price_checker.main()
 
     def call_weekly_conversion(self):
-        from modules import weekly_conversion
+        from scripts import weekly_conversion
         self.after(200, self.destroy())
         weekly_conversion.main()
 

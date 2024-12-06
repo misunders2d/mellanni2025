@@ -144,13 +144,9 @@ def plot_data(df:pd.DataFrame, num_weeks:int=2) -> BytesIO:
     ax.set_ylabel('Units sold')
     ax1.set_ylabel('Conversion')
     ax.set_xlabel('Week')
-    # ax.axis('off')
-    # ax1.axis('off')
     plt.tight_layout()
-    # plt.legend(['Conversion'])
     buf = BytesIO()
     plt.savefig(buf, format='png')
-    # plt.show()
     plt.close()
     buf.seek(0)
     return buf
