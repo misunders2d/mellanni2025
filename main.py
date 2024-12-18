@@ -28,6 +28,9 @@ class MainApp(ctk.CTk):
         self.coupon_helper_button = ctk.CTkButton(self.tools_frame, text='Coupon helper', command=self.call_coupon_helper)
         self.coupon_helper_button.grid(row=0, column=0, padx=self.xspacing, pady=self.yspacing)
 
+        self.title_check_button = ctk.CTkButton(self.tools_frame, text='Check titles', command=self.call_check_titles)
+        self.title_check_button.grid(row=1, column=0, padx=self.xspacing, pady=self.yspacing)
+
         self.update_button = ctk.CTkButton(self, text='Update', fg_color='gray', command=self.update)
         self.update_button.grid(row=3, column=0, pady=20)
 
@@ -50,6 +53,12 @@ class MainApp(ctk.CTk):
         from scripts import coupon_helper
         self.after(200, self.destroy)
         coupon_helper.main()
+
+    def call_check_titles(self):
+        from scripts import check_titles
+        self.after(200, self.destroy)
+        check_titles.main()
+
 if __name__ == '__main__':
     app = MainApp()
     app.mainloop()
