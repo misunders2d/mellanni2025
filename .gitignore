@@ -146,3 +146,6 @@ threads.txt
 
 gcloud.json
 gdrive.json
+
+run.bat
+run.sh
