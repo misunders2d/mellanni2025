@@ -87,7 +87,7 @@ def break_by_week(result:pd.DataFrame) -> pd.DataFrame:
     result['reporting_week']=result['year'].astype(str)+'-'+result['week'].astype(str)
     last_week=week_number(datetime.datetime.now())-1
     if last_week==0:
-        last_week = result['week'].sort_values().unique().tolist()[-1]
+        last_week = week_number(datetime.datetime.now() - datetime.timedelta(days=7))
     two_weeks = last_week-1
     result = result[result['week'].isin([last_week, two_weeks])]
     weeks=sorted(result['reporting_week'].unique(), reverse = True)
