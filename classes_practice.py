@@ -65,6 +65,5 @@ box.add_products([a,c,d])
 
 
 new_fruit = a + c
-a - b
 print(a >= c)
 print(a == d)
