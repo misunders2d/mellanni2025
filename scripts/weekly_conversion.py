@@ -12,10 +12,16 @@ from connectors import gcloud as gc
 from utils import mellanni_modules as mm
 from common import user_folder
 
+end_of_year = {datetime.datetime.strptime(x, '%Y-%m-%d').date() for x in {'2024-12-29','2024-12-30','2024-12-31'}}
 results={}
 
 def week_number(date: datetime.date) -> int:
     '''returns a week number for weeks starting with Sunday'''
+    if not isinstance(date, datetime.date):
+        try:
+            date = datetime.datetime.strptime(date,"%Y-%m-%d")
+        except:
+            raise BaseException("Date format not recognized")
     return date.isocalendar().week + 1 if date.weekday() == 6 else date.isocalendar().week
 
 def pull_sales(start: str, market: str) -> pd.DataFrame:
@@ -28,6 +34,8 @@ def pull_sales(start: str, market: str) -> pd.DataFrame:
     result = client.query(query).to_dataframe()
     result['year'] = pd.to_datetime(result['date']).dt.year
     result['week'] = pd.to_datetime(result['date']).apply(week_number)
+    result.loc[result['date'].isin(end_of_year),'year']=datetime.datetime.now().year
+    result.loc[result['date'].isin(end_of_year),'week']=1
     result['date'] = pd.to_datetime(result['date']).dt.date
     last_date=datetime.datetime.now() - datetime.timedelta(datetime.datetime.now().weekday()+1)
     results['sales']=result
@@ -53,6 +61,8 @@ def pull_changes(start:str, market:str) -> pd.DataFrame:
     result = client.query(query).to_dataframe()
     result['year'] = pd.to_datetime(result['date']).dt.year
     result['week'] = pd.to_datetime(result['date']).apply(week_number)
+    result.loc[result['date'].isin(end_of_year),'year']=datetime.datetime.now().year
+    result.loc[result['date'].isin(end_of_year),'week']=1
     result['date'] = pd.to_datetime(result['date']).dt.date
     results['changes']=result
     return result
@@ -88,7 +98,7 @@ def break_by_week(result:pd.DataFrame) -> pd.DataFrame:
     last_week=week_number(datetime.datetime.now())-1
     if last_week==0:
         last_week = week_number(datetime.datetime.now() - datetime.timedelta(days=7))
-    two_weeks = last_week-1
+    two_weeks = last_week-1 if last_week>1 else 52
     result = result[result['week'].isin([last_week, two_weeks])]
     weeks=sorted(result['reporting_week'].unique(), reverse = True)
     for week in weeks:
