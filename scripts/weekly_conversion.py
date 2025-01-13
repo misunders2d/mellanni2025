@@ -24,12 +24,19 @@ def week_number(date: datetime.date) -> int:
             raise BaseException("Date format not recognized")
     return date.isocalendar().week + 1 if date.weekday() == 6 else date.isocalendar().week
 
-def pull_sales(start: str, market: str) -> pd.DataFrame:
-    query = f"""SELECT DATE(date) AS date, sku, childAsin AS asin, unitsOrdered AS units, sessions
-                FROM `reports.business_report`
-                WHERE DATE(date) >= DATE("{start}")
-                AND country_code = "{market}"
-                """
+def pull_sales(start: str, market: str, report:str='business') -> pd.DataFrame:
+    if report == 'business_asin':
+        query = f"""SELECT DATE(date) AS date, childAsin AS asin, unitsOrdered AS units, sessions
+                    FROM `reports.business_report_asin`
+                    WHERE DATE(date) >= DATE("{start}")
+                    AND country_code = "{market}"
+                    """
+    elif report == 'business':
+        query = f"""SELECT DATE(date) AS date, sku, childAsin AS asin, unitsOrdered AS units, sessions
+                    FROM `reports.business_report`
+                    WHERE DATE(date) >= DATE("{start}")
+                    AND country_code = "{market}"
+                    """
     client = gc.gcloud_connect()
     result = client.query(query).to_dataframe()
     result['year'] = pd.to_datetime(result['date']).dt.year
@@ -218,7 +225,7 @@ def process_data(start, market):
 def process_data_threaded(start, market):
     print(start, market)
     threads = [
-        threading.Thread(target=pull_sales, args=(start, market)),
+        threading.Thread(target=pull_sales, args=(start, market, 'business_asin')),
         threading.Thread(target=pull_dictionary, args=(market,)),
         threading.Thread(target=pull_changes, args=(start, market)),
         ]
