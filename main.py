@@ -31,6 +31,9 @@ class MainApp(ctk.CTk):
         self.title_check_button = ctk.CTkButton(self.tools_frame, text='Check titles', command=self.call_check_titles)
         self.title_check_button.grid(row=1, column=0, padx=self.xspacing, pady=self.yspacing)
 
+        self.title_duplicate_check_button = ctk.CTkButton(self.tools_frame, text='Check duplicates in titles', command=self.call_check_title_duplicates)
+        self.title_duplicate_check_button.grid(row=2, column=0, padx=self.xspacing, pady=self.yspacing)
+
         self.update_button = ctk.CTkButton(self, text='Update', fg_color='gray', command=self.update)
         self.update_button.grid(row=3, column=0, pady=20)
 
@@ -51,13 +54,18 @@ class MainApp(ctk.CTk):
 
     def call_coupon_helper(self):
         from scripts import coupon_helper
-        self.after(200, self.destroy)
+        self.after(200, self.destroy())
         coupon_helper.main()
 
     def call_check_titles(self):
         from scripts import check_titles
-        self.after(200, self.destroy)
+        self.after(200, self.destroy())
         check_titles.main()
+
+    def call_check_title_duplicates(self):
+        from scripts import title_duplicates_checker
+        self.after(200, self.destroy())
+        title_duplicates_checker.run_custom_file()
 
 if __name__ == '__main__':
     app = MainApp()

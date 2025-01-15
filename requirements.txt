@@ -6,6 +6,7 @@ google-cloud
 google-cloud-storage
 google-cloud-bigquery-storage
 gspread
+inflect
 matplotlib
 openpyxl
 pandas
