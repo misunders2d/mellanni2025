@@ -56,6 +56,7 @@ class TitleChecker(ctk.CTk):
             full_list = self.read_flat_files()
             dictionary = self.read_dictionary()
             result = pd.merge(full_list, inv_file, how = 'left', on = 'sku')
+            result['sku'] = result['sku'].astype(str)
             result = result[~result['sku'].str.lower().str.contains('parent')]
             mismatch = result[result['Flat File title'] != result['Listing title']]
             mismatch = mismatch.dropna()
