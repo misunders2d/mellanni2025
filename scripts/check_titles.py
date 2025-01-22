@@ -51,17 +51,22 @@ class TitleChecker(ctk.CTk):
         self.progresbar.start()
 
     def process_files(self):
-        inv_file = self.read_inventory()
-        full_list = self.read_flat_files()
-        result = pd.merge(full_list, inv_file, how = 'left', on = 'sku')
-        result = result[~result['sku'].str.lower().str.contains('parent')]
-        mismatch = result[result['Flat File title'] != result['Listing title']]
-        mismatch = mismatch.dropna()
-        if len(mismatch) > 0:
-            mm.export_to_excel([mismatch],['mismatched_titles'],'title_check.xlsx', out_folder=user_folder)
-            mm.open_file_folder(user_folder)
-        else:
-            self.warning_label.configure(text='No mismatch found')
+        try:
+            inv_file = self.read_inventory()
+            full_list = self.read_flat_files()
+            dictionary = self.read_dictionary()
+            result = pd.merge(full_list, inv_file, how = 'left', on = 'sku')
+            result = result[~result['sku'].str.lower().str.contains('parent')]
+            mismatch = result[result['Flat File title'] != result['Listing title']]
+            mismatch = mismatch.dropna()
+            if len(mismatch) > 0:
+                mismatch = pd.merge(mismatch, dictionary, how ='left', on='sku')
+                mm.export_to_excel([mismatch],['mismatched_titles'],'title_check.xlsx', out_folder=user_folder)
+                mm.open_file_folder(user_folder)
+            else:
+                self.warning_label.configure(text='No mismatch found')
+        except Exception as e:
+            print(e)
         self.progresbar.stop()
 
 
@@ -98,6 +103,13 @@ class TitleChecker(ctk.CTk):
         inv_file: pd.DataFrame = self.client.query(self.query).to_dataframe()
         inv_file = inv_file.rename(columns = {'product_name':'Listing title'})
         return inv_file
+
+    def read_dictionary(self):
+        self.warning_label.configure(text='Reading dictionary')
+        query = 'SELECT sku, collection FROM `auxillary_development.dictionary`'
+        client = gc.gcloud_connect()
+        dictionary = client.query(query).to_dataframe()
+        return dictionary
 
 def main():
     app = TitleChecker()
