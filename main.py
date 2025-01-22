@@ -65,7 +65,8 @@ class MainApp(ctk.CTk):
     def call_check_title_duplicates(self):
         from scripts import title_duplicates_checker
         self.after(200, self.destroy())
-        title_duplicates_checker.run_custom_file()
+        title_duplicates_checker.main()
+        # title_duplicates_checker.run_custom_file()
 
 if __name__ == '__main__':
     app = MainApp()

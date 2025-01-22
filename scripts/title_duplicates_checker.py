@@ -1,12 +1,11 @@
 import os
 import pandas as pd
 import customtkinter as ctk
+from connectors import gcloud as gc
 import inflect # needs to be installed separately with `pip install inflect`
 
 from common import user_folder
 from utils.mellanni_modules import open_file_folder
-
-folder = r'G:\Shared drives\30 Sales\30.1 MELLANNI\30.11 AMAZON\30.111 US\Products\1_Latest Flat Files for checking Titles'
 
 all_files = []
 result = pd.DataFrame()
@@ -21,6 +20,12 @@ def get_files(folder, extension='xls') -> None: #create a full list of all 'xlsx
         elif os.path.isdir(full_path):
             get_files(full_path)
     return None
+
+def get_dictionary():
+    query = 'SELECT sku, collection FROM `auxillary_development.dictionary`'
+    client = gc.gcloud_connect()
+    dictionary = client.query(query).to_dataframe()
+    return dictionary
 
 def count_words(title): # clean, singularize and count words in a standalone title
     num_list = ['0','1','2','3','4','5','6','7','8','9']
@@ -117,11 +122,14 @@ class TitleDuplicateChecker(ctk.CTk):
         open_file_folder(user_folder)
         self.destroy()
 
-    
-    
 def main(): # main function that loops over each file in folders
     global all_files
+    folder = r'G:\Shared drives\30 Sales\30.1 MELLANNI\30.11 AMAZON\30.111 US\Products\1_Latest Flat Files for checking Titles'
+    if not os.path.exists(folder):
+        folder = ctk.filedialog.askdirectory(title='Select folder with flat files', initialdir=user_folder)
+
     get_files(folder)
+    dictionary = get_dictionary()
     for i,file_path in enumerate(all_files):
         print(f'Processing {i+1} of {len(all_files)}')
         try:
@@ -129,6 +137,7 @@ def main(): # main function that loops over each file in folders
         except Exception as e:
             print(e)
             print(file_path)
+    result = pd.merge(result, dictionary, how = 'left', on='sku')
     result.to_excel(os.path.join(os.path.expanduser('~'),'temp','duplicates.xlsx'),index=False)
     open_file_folder(os.path.join(os.path.expanduser('~'),'temp'))
 
@@ -136,4 +145,5 @@ def run_custom_file():
     app = TitleDuplicateChecker()
     app.mainloop()
 if __name__ == '__main__':
+    # main()
     run_custom_file()
