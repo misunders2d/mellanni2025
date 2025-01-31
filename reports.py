@@ -12,10 +12,14 @@ class Report(ctk.CTk):
         self.title('Pull reports from BQ')
         self.table_list = ctk.CTkComboBox(self, values=tables, width=500, command=self.get_list_columns)
         self.table_list.pack(pady=10)
+        self.labels = []
 
 
     def get_list_columns(self, table_name):
         schema = client.get_table(f'reports.{table_name}').schema
+        if self.labels:
+            for label in self.labels:
+                label.destroy()
         self.labels = []
         for row in schema:
             self.labels.append(ctk.CTkLabel(self, text=row.name))
