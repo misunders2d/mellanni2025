@@ -10,10 +10,20 @@ class Report(ctk.CTk):
         super().__init__()
         self.geometry('1080x800')
         self.title('Pull reports from BQ')
+        self.labels = []
+        self.check_vars = []
         self.table_list = ctk.CTkComboBox(self, values=tables, width=500, command=self.get_list_columns)
         self.table_list.pack(pady=10)
-        self.labels = []
+        self.button = ctk.CTkButton(self, text='PULL', command=self.pull_bq)
+        self.button.pack()
 
+    def pull_bq(self):
+        table_name = self.table_list.get()
+        column_names = [label.cget("text") for label in self.labels if label.get()]
+        columns = ', '.join(column_names)
+        query = f'''SELECT {columns} FROM `reports.{table_name}` LIMIT 100'''
+        df = client.query(query).to_dataframe()
+        print(df)
 
     def get_list_columns(self, table_name):
         schema = client.get_table(f'reports.{table_name}').schema
@@ -22,10 +32,9 @@ class Report(ctk.CTk):
                 label.destroy()
         self.labels = []
         for row in schema:
-            self.labels.append(ctk.CTkLabel(self, text=row.name))
+            self.labels.append(ctk.CTkCheckBox(self, text=row.name))
         for label in self.labels:
             label.pack()
-
 
 app = Report()
 app.mainloop()
