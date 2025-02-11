@@ -156,12 +156,12 @@ def plot_data(df:pd.DataFrame, num_weeks:int=2) -> BytesIO:
     ax1.plot(combined['reporting_week'], combined['conversion'], color='red')
     for week in weeks:
         units=combined.loc[combined['reporting_week']==week, 'units'].values[0]
-        ax.text(week, units, f'{units:,.0f}\nunits', ha='center', va='center')
+        ax.text(week, combined['units'].max(), f'{units:,.0f}\nunits', ha='center', va='center')
         conversion=combined.loc[combined['reporting_week']==week,'conversion'].values[0]
-        ax1.text(week, conversion, f'{conversion:.2%}', ha='center')
+        ax1.text(week, combined['conversion'].min(), f'{conversion:.2%}', ha='center', color='red')
     ax1.yaxis.set_major_formatter(PercentFormatter(1))
     ax.set_ylabel('Units sold')
-    ax1.set_ylabel('Conversion')
+    ax1.set_ylabel('Conversion', color='red')
     ax.set_xlabel('Week')
     plt.tight_layout()
     buf = BytesIO()
@@ -215,8 +215,10 @@ def process_data(start, market):
     changes_refined = clean_changes(changes, dictionary)
     
     result = pd.merge(sales_refined, changes_refined, how = 'left', on = ['year','week','collection','sub_collection'])
-    
+    current_week = week_number(pd.to_datetime(('today')))
     print(result['units'].sum())
+    result = result[result['week'] != current_week]
+    
     result_refined = break_by_week(result)
     result_total = add_totals(result_refined)
     plot_buf = plot_data(result)
@@ -243,8 +245,10 @@ def process_data_threaded(start, market):
     changes_refined = clean_changes(changes, dictionary)
     
     result = pd.merge(sales_refined, changes_refined, how = 'left', on = ['year','week','collection','sub_collection'])
-    
+    current_week = week_number(pd.to_datetime(('today')))
     print(result['units'].sum())
+    result = result[result['week'] != current_week]
+
     result_refined = break_by_week(result)
     result_total = add_totals(result_refined)
     plot_buf = plot_data(result)
