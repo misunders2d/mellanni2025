@@ -147,7 +147,7 @@ class Dataset:
             result:pd.DataFrame = self.client.query(query).to_dataframe()
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'inventory_history.csv'), index=False)
-        return result
+        self.inventory_history = result
 
     def pull_dictionary(self): # TODO add conditional to download different self.markets' dictionaries
         if self.local_data:
@@ -158,6 +158,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'dictionary.csv'), index=False)
         self.dictionary = result
+        self.dictionary.columns = [x.strip().lower() for x in self.dictionary.columns]
 
     def pull_advertised_product_data(self):
         if self.local_data:
@@ -194,7 +195,7 @@ class Dataset:
                 result.to_csv(os.path.join(user_folder, 'purchased_product.csv'), index=False)
         self.purchased_product = result
 
-    def pull_attribution_data(self):
+    def pull_attribution_data(self): # NOT product specific
         if self.local_data:
             result = pd.read_csv(os.path.join(user_folder, 'attribution.csv'))
         else:
@@ -211,7 +212,7 @@ class Dataset:
                 result.to_csv(os.path.join(user_folder, 'attribution.csv'), index=False)
         self.attribution = result
 
-    def pull_dsp_data(self):
+    def pull_dsp_data(self): # NOT product specific
         if self.local_data:
             result = pd.read_csv(os.path.join(user_folder, 'dsp.csv'))
         else:
@@ -230,13 +231,13 @@ class Dataset:
                 result.to_csv(os.path.join(user_folder, 'dsp.csv'), index=False)
         self.dsp = result
 
-    def pull_sba_data(self): #TODO
+    def pull_sba_data(self): #TODO # NOT product specific
         self.sba = None
 
-    def pull_sbv_data(self): #TODO
+    def pull_sbv_data(self): #TODO # NOT product specific
         self.sbv = None
 
-    def pull_sd_data(self): #TODO
+    def pull_sd_data(self): #TODO # NOT product specific
         self.sd = None
 
     def pull_fba_shipments_data(self):
@@ -299,13 +300,57 @@ class Dataset:
                 fees.to_csv(os.path.join(user_folder, 'fees.csv'), index=False)
         self.fees = fees
 
+    def pull_warehouse(self):
+        "pulls data from sellercloud, aggregating inventory stock at warehouse"
+        if self.local_data:
+            warehouse = pd.read_csv(os.path.join(user_folder, 'warehouse.csv'))
+        else:
+            query = f"""
+                    SELECT date, ProductID as sku, QtyAvailable, QtyPhysical, BinType, Sellable, BinName
+                    FROM `mellanni-project-da.sellercloud.inventory_bins`
+                    WHERE DATE(date)=LEAST(
+                    (SELECT MAX(date) FROM `mellanni-project-da.sellercloud.inventory_bins`), DATE("{self.end}")
+                    )
+                    """
+            result:pd.DataFrame = self.client.query(query).to_dataframe()
+
+            # split warehouse inventory by sellable and receiving
+            sellable = result.query('Sellable == True & BinType != "Picking" & ~BinName.str.startswith("DS")')
+            sellable = sellable.pivot_table(
+                values = ['QtyAvailable', 'QtyPhysical', 'date'],
+                index = 'sku',
+                aggfunc = {'QtyAvailable':'sum', 'QtyPhysical':'sum', 'date':'max'}
+                ).reset_index()
+            sellable = sellable.rename(columns = {'QtyAvailable':'total_wh'})
+            
+            receiving = result.query('Sellable == False & BinType == "Receiving"')
+            receiving = receiving.pivot_table(
+                values = ['QtyAvailable', 'QtyPhysical', 'date'],
+                index = 'sku',
+                aggfunc = {'QtyAvailable':'sum', 'QtyPhysical':'sum', 'date':'max'}
+                ).reset_index()
+            receiving['total_receiving'] = receiving[['QtyAvailable', 'QtyPhysical']].sum(axis = 1)
+            warehouse = pd.merge(sellable, receiving[['date','sku','total_receiving']], how = 'outer', on = ['date','sku'])
+            if self.save:
+                warehouse.to_csv(os.path.join(user_folder, 'warehouse.csv'), index=False)
+        self.warehouse = warehouse
+
+    def pull_changelog(self): #TODO
+        self.changes = None
+
+    def pull_incoming(self): #TODO
+        self.incoming = None
+    
+    def pull_pricing(self): #TODO
+        self.pricing = None
+
     async def _pull_all_data(self):
         functions = [
             self.pull_br_asin_data, self.pull_br_data, self.pull_order_data, self.pull_inventory_data,
             self.pull_inventory_history, self.pull_advertised_product_data,
             self.pull_purchased_product_data, self.pull_attribution_data, self.pull_dsp_data,
             self.pull_sba_data, self.pull_sbv_data, self.pull_sd_data, self.pull_promotions,
-            self.pull_fees_dimensions
+            self.pull_fees_dimensions, self.pull_warehouse, self.pull_changelog, self.pull_incoming
         ]
 
         async def run_function(func):
@@ -318,59 +363,5 @@ class Dataset:
     def query(self):
         asyncio.run(self._pull_all_data())
         self.pull_dictionary()
-        for attr in dir(self):
-            if isinstance(attr, pd.DataFrame):
-                attr.columns = [x.strip().lower() for x in attr.columns]
+        self.pull_pricing()
 
-
-def get_ppc_sales(start=START, end=END, market=MARKET, local_data=LOCAL, save=SAVE): # do not use
-    "pull the summary report from all ad reports, not used now"
-    ap_query = f'''SELECT EXTRACT(MONTH FROM date) as month, SUM(sales14d) as ap_sales
-                FROM `mellanni-project-da.reports.AdvertisedProduct`
-                WHERE DATE(date) >= DATE("{start}") AND DATE(date) <= DATE("{end}")
-                AND UPPER(country_code) = "{market}" GROUP BY month ORDER BY month'''
-    
-    br_query = f'''SELECT EXTRACT(MONTH FROM date) as month, SUM(orderedProductSales) as total_sales
-                FROM `mellanni-project-da.reports.business_report`
-                WHERE DATE(date) >= DATE("{start}") AND DATE(date) <= DATE("{end}")
-                AND UPPER(country_code) = "{market}" GROUP BY month ORDER BY month'''
-
-    dsp_query = f'''SELECT EXTRACT(MONTH FROM date) as month, SUM(sales_usd) as dsp_sales
-                FROM `mellanni-project-da.reports.dsp_report`
-                WHERE DATE(date) >= DATE("{start}") AND DATE(date) <= DATE("{end}") GROUP BY month ORDER BY month'''
-
-    sba_query = f'''SELECT EXTRACT(MONTH FROM date) as month, SUM(attributedSales14d) as sba_sales
-                FROM `mellanni-project-da.reports.sponsored_brands_all`
-                WHERE DATE(date) >= DATE("{start}") AND DATE(date) <= DATE("{end}")
-                AND UPPER(country_code) = "{market}" GROUP BY month ORDER BY month'''
-
-    sbv_query = f'''SELECT EXTRACT(MONTH FROM date) as month, SUM(attributedSales14d) as sbv_sales
-                FROM `mellanni-project-da.reports.sponsored_brands_video`
-                WHERE DATE(date) >= DATE("{start}") AND DATE(date) <= DATE("{end}")
-                AND UPPER(country_code) = "{market}" GROUP BY month ORDER BY month'''
-
-    sd_query = f'''SELECT EXTRACT(MONTH FROM date) as month, SUM(attributedSales14d) as sd_sales
-                FROM `mellanni-project-da.reports.sponsored_display`
-                WHERE DATE(date) >= DATE("{start}") AND DATE(date) <= DATE("{end}")
-                AND UPPER(country_code) = "{market}" GROUP BY month ORDER BY month'''
-
-    attribution_query = f'''SELECT EXTRACT(MONTH FROM date) as month, SUM(totalAttributedSales14d) as attribution_sales
-                FROM `mellanni-project-da.reports.attribution`
-                WHERE DATE(date) >= DATE("{start}") AND DATE(date) <= DATE("{end}")
-                AND UPPER(countryCode) = "{market}" GROUP BY month ORDER BY month'''
-
-    client = gc.gcloud_connect()
-    ap_sales = client.query(ap_query).to_dataframe()
-    ap_sales.to_csv(os.path.join(user_folder, 'ap_sales.csv'), index=False)
-    br_sales = client.query(br_query).to_dataframe()
-    br_sales.to_csv(os.path.join(user_folder, 'br_sales.csv'), index=False)
-    dsp_sales = client.query(dsp_query).to_dataframe()
-    dsp_sales.to_csv(os.path.join(user_folder, 'dsp_sales.csv'), index=False)
-    sba_sales = client.query(sba_query).to_dataframe()
-    sba_sales.to_csv(os.path.join(user_folder, 'sba_sales.csv'), index=False)
-    sbv_sales = client.query(sbv_query).to_dataframe()
-    sbv_sales.to_csv(os.path.join(user_folder, 'sbv_sales.csv'), index=False)
-    sd_sales = client.query(sd_query).to_dataframe()
-    sd_sales.to_csv(os.path.join(user_folder, 'sd_sales.csv'), index=False)
-    attribution_sales = client.query(attribution_query).to_dataframe()
-    attribution_sales.to_csv(os.path.join(user_folder, 'attribution_sales.csv'), index=False)
