@@ -10,6 +10,7 @@ from utils import mellanni_modules as mm
 
 from connectors import gcloud as gc
 from connectors import gdrive as gd
+from utils.mellanni_modules import week_number
 from common import events, excluded_collections, user_folder
 import asyncio
 
@@ -30,6 +31,7 @@ class Dataset:
         self.local_data = local_data
         self.save = save
         self.fba_shipments = None
+        self.orders = None
 
     def pull_br_asin_data(self):
         "pulls sessions data (detailed) per asin for all products regardless of sales"
@@ -231,14 +233,59 @@ class Dataset:
                 result.to_csv(os.path.join(user_folder, 'dsp.csv'), index=False)
         self.dsp = result
 
-    def pull_sba_data(self): #TODO # NOT product specific
-        self.sba = None
+    def pull_sba_data(self): # NOT product specific
+        if self.local_data:
+            result = pd.read_csv(os.path.join(user_folder, 'sba.csv'))
+        else:
+            query = f'''SELECT DATE(date) AS date,
+                        SUM(cost) AS cost, SUM(clicks) AS clicks,
+                        SUM(impressions) AS impressions, SUM(dpv14d) AS dpv14d,
+                        SUM(unitsSold14d) AS unitsSold14d, SUM(attributedSales14d) AS attributedSales14d
+                        FROM `reports.sponsored_brands_all`
+                        WHERE DATE(date) BETWEEN DATE("{self.start}") AND DATE("{self.end}")
+                        AND UPPER(country_code) = "{self.market}"
+                        GROUP BY date ORDER BY date
+                        '''
+            result:pd.DataFrame = self.client.query(query).to_dataframe()
+            if self.save:
+                result.to_csv(os.path.join(user_folder, 'sba.csv'), index=False)
+        self.sba = result
 
-    def pull_sbv_data(self): #TODO # NOT product specific
-        self.sbv = None
+    def pull_sbv_data(self): # NOT product specific
+        if self.local_data:
+            result = pd.read_csv(os.path.join(user_folder, 'sbv.csv'))
+        else:
+            query = f'''SELECT DATE(date) AS date,
+                        SUM(cost) AS cost, SUM(clicks) AS clicks,
+                        SUM(impressions) AS impressions, SUM(dpv14d) AS dpv14d,
+                        SUM(attributedUnitsOrderedNewToBrand14d) AS attributedUnitsOrderedNewToBrand14d, SUM(attributedSales14d) AS attributedSales14d
+                        FROM `reports.sponsored_brands_video`
+                        WHERE DATE(date) BETWEEN DATE("{self.start}") AND DATE("{self.end}")
+                        AND UPPER(country_code) = "{self.market}"
+                        GROUP BY date ORDER BY date
+                        '''
+            result:pd.DataFrame = self.client.query(query).to_dataframe()
+            if self.save:
+                result.to_csv(os.path.join(user_folder, 'sbv.csv'), index=False)
+        self.sbv = result
 
-    def pull_sd_data(self): #TODO # NOT product specific
-        self.sd = None
+    def pull_sd_data(self): # NOT product specific
+        if self.local_data:
+            result = pd.read_csv(os.path.join(user_folder, 'sd.csv'))
+        else:
+            query = f'''SELECT DATE(date) AS date,
+                        SUM(cost) AS cost, SUM(clicks) AS clicks,
+                        SUM(impressions) AS impressions, SUM(dpv14d) AS dpv14d,
+                        SUM(unitsSold14d) AS unitsSold14d, SUM(attributedSales14d) AS attributedSales14d
+                        FROM `reports.sponsored_brands_all`
+                        WHERE DATE(date) BETWEEN DATE("{self.start}") AND DATE("{self.end}")
+                        AND UPPER(country_code) = "{self.market}"
+                        GROUP BY date ORDER BY date
+                        '''
+            result:pd.DataFrame = self.client.query(query).to_dataframe()
+            if self.save:
+                result.to_csv(os.path.join(user_folder, 'sd.csv'), index=False)
+        self.sd = result
 
     def pull_fba_shipments_data(self):
         if self.local_data:
@@ -291,6 +338,40 @@ class Dataset:
                 result.to_csv(os.path.join(user_folder, 'promotions.csv'), index=False)
         self.promotions = result
 
+    def pull_returns(self):
+        "generates returns data from the 'amazon_order_is' list obtained from orders report"
+        if self.local_data:
+            result = pd.read_csv(os.path.join(user_folder, 'returns.csv'))
+        else:
+            if not self.orders:
+                self.pull_order_data()
+            amazon_order_ids = pd.DataFrame(self.orders['amazon_order_id'].unique().tolist(), columns=['amazon_order_id'])
+            # amazon_purchase_dates = self.fba_shipments[['amazon_order_id','pacific_date']].drop_duplicates()
+            # order_sales_data = self.fba_shipments[['shipment_item_id','units_sold','sales']].groupby('shipment_item_id').sum().reset_index()
+            pandas_gbq.to_gbq(amazon_order_ids, destination_table='auxillary_development.temp_order_ids', if_exists='replace')
+
+            query = '''SELECT DATETIME(return_date, "America/Los_Angeles") as return_date,
+                        order_id, sku, asin, quantity, detailed_disposition, reason, status, customer_comments, country_code
+                        FROM `reports.fba_returns`
+                        WHERE order_id IN
+                            (SELECT amazon_order_id 
+                            FROM `auxillary_development.temp_order_ids`)
+                        '''
+            result:pd.DataFrame = self.client.query(query).to_dataframe()
+            # result = pd.merge(ids_result, shipment_item_ids, how='left', on='shipment_item_id')
+            # result = pd.merge(result, amazon_purchase_dates, how='left', on='amazon_order_id')
+            # result = pd.merge(result, order_sales_data, how='left', on='shipment_item_id')
+            # result.loc[result['shipment_item_id'].duplicated(), ['units_sold','sales']] = 0
+            # result.loc[result['shipment_item_id'].duplicated(), ] = 0
+            # result = result.sort_values(
+            #     by=['pacific_date','amazon_order_id','shipment_item_id', 'item_promotion_discount','sales'],
+            #         ascending=[True, True, True, False, False]
+            #         )
+            self.client.query('DROP TABLE `auxillary_development.temp_shipment_ids`')
+            if self.save:
+                result.to_csv(os.path.join(user_folder, 'returns.csv'), index=False)
+        self.returns = result
+
     def pull_fees_dimensions(self):
         if self.local_data:
             fees = pd.read_csv(os.path.join(user_folder, 'fees.csv'))
@@ -335,12 +416,49 @@ class Dataset:
                 warehouse.to_csv(os.path.join(user_folder, 'warehouse.csv'), index=False)
         self.warehouse = warehouse
 
-    def pull_changelog(self): #TODO
-        self.changes = None
+    def pull_changelog(self): # TODO add conditional to download sku_changelogs for different markets
+        if self.local_data:
+            result = pd.read_csv(os.path.join(user_folder, 'changelog.csv'))
+        else:
+            query = f'''SELECT DATE(date) AS date, sku, asin, change_type, notes,
+                        FROM `auxillary_development.sku_changelog`
+                        WHERE DATE(date) BETWEEN DATE("{self.start}") AND DATE("{self.end}")
+                        '''
+            result:pd.DataFrame = self.client.query(query).to_dataframe()
+            if self.save:
+                result.to_csv(os.path.join(user_folder, 'changelog.csv'), index=False)
+        self.changelog = result
 
-    def pull_incoming(self): #TODO
-        self.incoming = None
-    
+    def pull_incoming(self):
+        if self.local_data:
+            result = pd.read_csv(os.path.join(user_folder, 'incoming.csv'))
+        else:
+            query = '''SELECT ExpectedDeliveryDate, Items FROM `mellanni-project-da.sellercloud.purchase_orders`
+                        WHERE DATE(ExpectedDeliveryDate) >= DATE(CURRENT_DATE())
+                        '''
+            nested:pd.DataFrame = self.client.query(query).to_dataframe()
+            unnested = pd.DataFrame()
+            for i, df in nested.iterrows():
+                for row in df.Items:
+                    temp = pd.DataFrame(row, index=[i])
+                    temp['eta'] = df.ExpectedDeliveryDate
+                    unnested = pd.concat([unnested, temp])
+            unnested['eta'] = pd.to_datetime(unnested['eta'])
+            unnested['year'] = unnested['eta'].dt.year
+            unnested['week'] = unnested['eta'].apply(week_number)
+            unnested['year-week'] = unnested['year'].astype(str) + "-" + unnested['week'].astype(str)
+            
+            result = unnested.pivot_table(
+                values = ['QtyOrdered'],
+                index = ['year-week','SKU'],
+                aggfunc = 'sum'
+                ).reset_index()
+            result = result.rename(columns={'SKU':'sku'})
+                        
+            if self.save:
+                result.to_csv(os.path.join(user_folder, 'incoming.csv'), index=False)
+        self.incoming = result
+            
     def pull_pricing(self): #TODO
         self.pricing = None
 
@@ -349,7 +467,7 @@ class Dataset:
             self.pull_br_asin_data, self.pull_br_data, self.pull_order_data, self.pull_inventory_data,
             self.pull_inventory_history, self.pull_advertised_product_data,
             self.pull_purchased_product_data, self.pull_attribution_data, self.pull_dsp_data,
-            self.pull_sba_data, self.pull_sbv_data, self.pull_sd_data, self.pull_promotions,
+            self.pull_sba_data, self.pull_sbv_data, self.pull_sd_data, self.pull_promotions, self.pull_returns,
             self.pull_fees_dimensions, self.pull_warehouse, self.pull_changelog, self.pull_incoming
         ]
 
