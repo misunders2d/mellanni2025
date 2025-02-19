@@ -15,15 +15,6 @@ from common import user_folder
 end_of_year = {datetime.datetime.strptime(x, '%Y-%m-%d').date() for x in {'2024-12-29','2024-12-30','2024-12-31'}}
 results={}
 
-def week_number(date: datetime.date) -> int:
-    '''returns a week number for weeks starting with Sunday'''
-    if not isinstance(date, datetime.date):
-        try:
-            date = datetime.datetime.strptime(date,"%Y-%m-%d")
-        except:
-            raise BaseException("Date format not recognized")
-    return date.isocalendar().week + 1 if date.weekday() == 6 else date.isocalendar().week
-
 def pull_sales(start: str, market: str, report:str='business') -> pd.DataFrame:
     if report == 'business_asin':
         query = f"""SELECT DATE(date) AS date, childAsin AS asin, unitsOrdered AS units, sessions
@@ -40,7 +31,7 @@ def pull_sales(start: str, market: str, report:str='business') -> pd.DataFrame:
     client = gc.gcloud_connect()
     result = client.query(query).to_dataframe()
     result['year'] = pd.to_datetime(result['date']).dt.year
-    result['week'] = pd.to_datetime(result['date']).apply(week_number)
+    result['week'] = pd.to_datetime(result['date']).apply(mm.week_number)
     result.loc[result['date'].isin(end_of_year),'year']=datetime.datetime.now().year
     result.loc[result['date'].isin(end_of_year),'week']=1
     result['date'] = pd.to_datetime(result['date']).dt.date
@@ -67,7 +58,7 @@ def pull_changes(start:str, market:str) -> pd.DataFrame:
     client = gc.gcloud_connect()
     result = client.query(query).to_dataframe()
     result['year'] = pd.to_datetime(result['date']).dt.year
-    result['week'] = pd.to_datetime(result['date']).apply(week_number)
+    result['week'] = pd.to_datetime(result['date']).apply(mm.week_number)
     result.loc[result['date'].isin(end_of_year),'year']=datetime.datetime.now().year
     result.loc[result['date'].isin(end_of_year),'week']=1
     result['date'] = pd.to_datetime(result['date']).dt.date
@@ -102,9 +93,9 @@ def break_by_week(result:pd.DataFrame) -> pd.DataFrame:
     result['conversion'] = result['units'] / result['sessions']
     result_refined = pd.DataFrame(columns = ['collection','sub_collection'])
     result['reporting_week']=result['year'].astype(str)+'-'+result['week'].astype(str)
-    last_week=week_number(datetime.datetime.now())-1
+    last_week=mm.week_number(datetime.datetime.now())-1
     if last_week==0:
-        last_week = week_number(datetime.datetime.now() - datetime.timedelta(days=7))
+        last_week = mm.week_number(datetime.datetime.now() - datetime.timedelta(days=7))
     two_weeks = last_week-1 if last_week>1 else 52
     result = result[result['week'].isin([last_week, two_weeks])]
     weeks=sorted(result['reporting_week'].unique(), reverse = True)
@@ -215,7 +206,7 @@ def process_data(start, market):
     changes_refined = clean_changes(changes, dictionary)
     
     result = pd.merge(sales_refined, changes_refined, how = 'left', on = ['year','week','collection','sub_collection'])
-    current_week = week_number(pd.to_datetime(('today')))
+    current_week = mm.week_number(pd.to_datetime(('today')))
     print(result['units'].sum())
     result = result[result['week'] != current_week]
     
@@ -245,7 +236,7 @@ def process_data_threaded(start, market):
     changes_refined = clean_changes(changes, dictionary)
     
     result = pd.merge(sales_refined, changes_refined, how = 'left', on = ['year','week','collection','sub_collection'])
-    current_week = week_number(pd.to_datetime(('today')))
+    current_week = mm.week_number(pd.to_datetime(('today')))
     print(result['units'].sum())
     result = result[result['week'] != current_week]
 
