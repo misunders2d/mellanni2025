@@ -351,7 +351,9 @@ def export_to_excel(df):
     mm.open_file_folder(user_folder)
 
 def separate_file():
-    file_path = filedialog.askopenfilename('File with dims')
+    file_path = filedialog.askopenfilename(
+        title="Select file with dimensions",
+        filetypes=[("Excel files","*.xls*"),])
     df = pd.read_excel(file_path)
     df = get_shipping_weight(df)
     df = get_size_tier(df)
