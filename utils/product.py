@@ -119,18 +119,29 @@ class Product:
         self._update_ids(self.fees_dimensions_df)
 
     def _pull_warehouse(self):
-        self.warehouse_df = Product.dataset.warehouse[(Product.dataset.warehouse['sku'].isin(self.skus))]
+        self.warehouse_df = Product.dataset.warehouse[Product.dataset.warehouse['sku'].isin(self.skus)]
         Product.dataset.warehouse = Product.dataset.warehouse[~Product.dataset.warehouse.index.isin(self.warehouse_df.index)]
         self._update_ids(self.warehouse_df)
     
-    def _pull_changelog(self): #TODO
-        pass
+    def _pull_changelog(self):
+        self.changelog_df = Product.dataset.changelog[(Product.dataset.changelog['sku'].isin(self.skus)) | (Product.dataset.changelog['asin'].isin(self.asins))]
+        Product.dataset.changelog = Product.dataset.changelog[~Product.dataset.changelog.index.isin(self.changelog_df.index)]
+        self._update_ids(self.changelog_df)
+    
+    def _pull_incoming(self):
+        self.incoming_df = Product.dataset.incoming[Product.dataset.incoming['sku'].isin(self.skus)]
+        Product.dataset.incoming = Product.dataset.incoming[~Product.dataset.incoming.index.isin(self.incoming_df.index)]
+        self._update_ids(self.incoming_df)
 
-    def _pull_incoming(self): #TODO
-        pass
+    def _pull_pricing(self):
+        self.pricing_df = Product.dataset.pricing[Product.dataset.pricing['sku'].isin(self.skus)]
+        Product.dataset.pricing = Product.dataset.pricing[~Product.dataset.pricing.index.isin(self.pricing_df.index)]
+        self._update_ids(self.pricing_df)
 
-    def _pull_pricing(self): #TODO
-        pass
+    def _pull_cogs(self):
+        self.cogs_df = Product.dataset.cogs[Product.dataset.cogs['sku'].isin(self.skus)]
+        Product.dataset.cogs = Product.dataset.cogs[~Product.dataset.cogs.index.isin(self.cogs_df.index)]
+        self._update_ids(self.cogs_df)
 
     ### async section ###
     async def _pull_data(self, pull_function):
@@ -152,7 +163,8 @@ class Product:
             self._pull_data(self._pull_warehouse),
             self._pull_data(self._pull_changelog),
             self._pull_data(self._pull_incoming),
-            self._pull_data(self._pull_pricing)
+            self._pull_data(self._pull_pricing),
+            self._pull_data(self._pull_cogs)
         ]
         await asyncio.gather(*tasks)
 
@@ -172,57 +184,72 @@ class Product:
         self._pull_warehouse()
         self._pull_changelog()
         self._pull_incoming()
-        self._pull_pricing()        
+        self._pull_pricing()
+        self._pull_cogs()
 
     ### calculations section ###########################################################################################
-    def _calculate_orders(self, start, end):
-        start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
-        self.orders_df['pacific_date'] = pd.to_datetime(self.orders_df['pacific_date']).dt.date
-        self.orders = self.orders_df[(self.orders_df['pacific_date'] >= start) & (self.orders_df['pacific_date'] <= end)]
-        self.orders = self.orders.groupby('pacific_date').agg({'units_sold':'sum', 'sales':'sum'}).reset_index()
-        self.stats['orders'] = {'units':self.orders['units_sold'].sum(), 'sales':self.orders['sales'].sum()}
-
-    def _calculate_br(self, start, end):
-        start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
-        self.br_df['date'] = pd.to_datetime(self.br_df['date']).dt.date
-        self.br = self.br_df[['date', 'sku', 'asin', 'unitsOrdered', 'unitsOrderedB2B','orderedProductSales', 'orderedProductSalesB2B']].copy()
-
-        self.br = self.br[(self.br['date'] >= start) & (self.br['date'] <= end)]
-        self.br = self.br.groupby(['date', 'sku', 'asin']).agg('sum').reset_index()
-        self.stats['br'] = {
-            'units':self.br['unitsOrdered'].sum(), 'unitsb2b':self.br['unitsOrderedB2B'].sum(),
-            'sales':self.br['orderedProductSales'].sum(), 'salesb2b':self.br['orderedProductSalesB2B'].sum()}
-        
     def _calculate_br_asin(self, start, end):
         start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
         self.br_asin_df['date'] = pd.to_datetime(self.br_asin_df['date']).dt.date
         self.br_asin = self.br_asin_df[
             ['date', 'asin', 'browserSessions','browserSessionsB2B', 'mobileAppSessions',
-             'mobileAppSessionsB2B','sessions', 'sessionsB2B', 'browserPageViews',
+             'mobileAppSessionsB2B','sessions', 'sessionsB2B', 'browserPageViews', 'country_code',
              'browserPageViewsB2B','mobileAppPageViews', 'mobileAppPageViewsB2B', 'pageViews','pageViewsB2B']
              ].copy()
 
         self.br_asin = self.br_asin[(self.br_asin['date'] >= start) & (self.br_asin['date'] <= end)]
-        self.br_asin = self.br_asin.groupby(['date', 'asin']).agg('sum').reset_index()
-        self.stats['br_asin'] = {
-            'browserSessions':self.br_asin['browserSessions'].sum(), 'browserSessionsB2B':self.br_asin['browserSessionsB2B'].sum(),
-            'mobileAppSessions':self.br_asin['mobileAppSessions'].sum(), 'mobileAppSessionsB2B':self.br_asin['mobileAppSessionsB2B'].sum(),
-            'sessions':self.br_asin['sessions'].sum(), 'sessionsB2B':self.br_asin['sessionsB2B'].sum(),
-            'browserPageViews':self.br_asin['browserPageViews'].sum(), 'browserPageViewsB2B':self.br_asin['browserPageViewsB2B'].sum(),
-            'mobileAppPageViews':self.br_asin['mobileAppPageViews'].sum(), 'mobileAppPageViewsB2B':self.br_asin['mobileAppPageViewsB2B'].sum(),
-            'pageViews':self.br_asin['pageViews'].sum(), 'pageViewsB2B':self.br_asin['pageViewsB2B'].sum()}
-    
+        self.br_asin = self.br_asin.groupby(['country_code','date', 'asin']).agg('sum').reset_index()
+        sum_cols = self.br_asin.columns[3:]
+        agg_dict = {col:'sum' for col in sum_cols}
+        agg_dict['date'] = lambda x: [len(x),min(x), max(x)]
+        br_asin_sum = self.br_asin.groupby(['country_code', 'asin']).agg(agg_dict)
+        br_asin_sum[['# days','min_date','max_date']] = br_asin_sum['date'].tolist()
+        del br_asin_sum['date']
+        self.stats['br_asin'] = br_asin_sum
+
+    def _calculate_br(self, start, end):
+        start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
+        self.br_df['date'] = pd.to_datetime(self.br_df['date']).dt.date
+        self.br = self.br_df[
+            ['date', 'sku', 'asin', 'unitsOrdered', 'unitsOrderedB2B',
+             'orderedProductSales', 'orderedProductSalesB2B','country_code']
+            ].copy()
+
+        self.br = self.br[(self.br['date'] >= start) & (self.br['date'] <= end)]
+        self.br = self.br.groupby(['country_code','date', 'sku', 'asin']).agg('sum').reset_index()
+        
+        br_sum = self.br.groupby(['country_code', 'sku', 'asin']).agg(
+            {'unitsOrdered':'sum','unitsOrderedB2B':'sum',
+             'orderedProductSales':'sum', 'orderedProductSalesB2B':'sum',
+             'date':lambda x: [len(x),min(x), max(x)]}).reset_index()
+        br_sum[['# days','min_date','max_date']] = br_sum['date'].tolist()
+        del br_sum['date']
+        self.stats['br'] = br_sum
+
+    def _calculate_orders(self, start, end):
+        start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
+        self.orders_df['pacific_date'] = pd.to_datetime(self.orders_df['pacific_date']).dt.date
+        self.orders = self.orders_df[(self.orders_df['pacific_date'] >= start) & (self.orders_df['pacific_date'] <= end)]
+        self.orders = self.orders.groupby(['pacific_date','sku','sales_channel']).agg({'units_sold':'sum', 'sales':'sum'}).reset_index()
+        orders_sum = self.orders.groupby(['sales_channel','sku']).agg(
+            {'units_sold':'sum', 'sales':'sum', 'pacific_date':lambda x: [len(x),min(x), max(x)]}).reset_index()
+        orders_sum[['# days','min_date','max_date']] = orders_sum['pacific_date'].tolist()
+        del orders_sum['pacific_date']
+        self.stats['orders'] = orders_sum
+        
     def _calculate_inventory(self, start, end):
         start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
         self.inventory_df['date'] = pd.to_datetime(self.inventory_df['date']).dt.date
         self.inventory = self.inventory_df[(self.inventory_df['date'] >= start) & (self.inventory_df['date'] <= end)]
-        # self.stats['inventory'] = {'units':self.inventory['units'].sum()}
+        self.stats['inventory'] = self.inventory
 
     def _calculate_inventory_history(self, start, end):
         start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
         self.inventory_history_df['date'] = pd.to_datetime(self.inventory_history_df['date']).dt.date
         self.inventory_history = self.inventory_history_df[(self.inventory_history_df['date'] >= start) & (self.inventory_history_df['date'] <= end)]
-        # self.stats['inventory'] = {'units':self.inventory['units'].sum()}
+        self.inventory_history = self.inventory_history.groupby(
+            ['date','sku','asin','marketplace']).agg('sum').reset_index()
+        self.stats['inventory'] = self.inventory_history
 
     def calculate_loop(self, start, end):
         self._calculate_orders(start, end)

@@ -8,22 +8,30 @@ from utils.dataset import Dataset
 from utils.product import Product
 import sys
 
-
-dataset = Dataset(start="2024-09-01", end="2025-12-31", local_data=False, save=True)
+start = time.perf_counter()
+dataset = Dataset(start="2025-02-01", end="2025-03-31", local_data=False, save=True, market=['US'])
+# dataset.query_sync()
 # dataset.query()
-# dataset.pull_promotions()
+# dataset.pull_warehouse()
+# dataset.warehouse.to_excel('/home/misunderstood/temp/wh.xlsx', index = False)
 # dataset.pull_fees_dimensions()
-dataset.pull_incoming()
+# dataset.pull_pricing()
+# dataset.pull_cogs()
+dataset.pull_promotions()
+print(time.perf_counter() - start)
 
 
 
 asins = ['B00NLLUMOE','B00NQDGAP2','B00O35DAL4','B00O35CWQ8','B00SBZJ8NG','B08RZDBZZJ','B0822X1VP7','B00RKHWJ1O','B00NLLUP4G','B08RZCYC5X','B0822X4TLW','B00NLLUNSE','B00SU0QSZ8','B00NQDGCW8','B01DN0AJXQ','B00RKHX3E6','B00NQDGBTC']
+# asins = dataset.dictionary['asin'].unique()
 
 # products = [Product(asin=x, dataset=dataset) for x in asins]
+# product = Product(asin='B00NQDGAP2', dataset=dataset)
+# product.populate_loop()
+# product.calculate_loop("2024-01-01", "2024-01-31")
+# print(product.stats['orders'])
 
-# for product in products:
-#     print(len(Product.dataset.promotions))
-#     product._pull_promotions()
+
 
 # for product in products:
 #     try:
