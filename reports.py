@@ -36,10 +36,11 @@ class Report(ctk.CTk):
     def pull_bq(self):
         table_name = self.table_list.get()
         column_names = [label.cget("text") for label in self.labels if label.get()]
-        columns = ', '.join(column_names)
-        query = f'''SELECT {columns} FROM `reports.{table_name}` LIMIT 100'''
-        df = client.query(query).to_dataframe()
-        print(df)
+        if column_names:
+            columns = ', '.join(column_names)
+            query = f'''SELECT {columns} FROM `reports.{table_name}` LIMIT 100'''
+            df = client.query(query).to_dataframe()
+            print(df)
 
     def get_list_columns(self, table_name):
         schema = client.get_table(f'reports.{table_name}').schema
