@@ -115,7 +115,11 @@ class Dataset:
     def pull_order_data(self):
         "pulls data from order reports, converting datetime to pacific timezone"
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'orders.csv'))
+            result = pd.DataFrame()
+            chunks = pd.read_csv(os.path.join(user_folder, 'orders.csv'), chunksize=100000)
+            for chunk in chunks:
+                result = pd.concat([result, chunk], ignore_index=True)
+
         else:
             query = f"""
                     SELECT

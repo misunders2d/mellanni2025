@@ -12,13 +12,15 @@ start = time.perf_counter()
 dataset = Dataset(start="2025-02-01", end="2025-03-31", local_data=False, save=True, market=['US'])
 # dataset.query_sync()
 # dataset.query()
-# dataset.pull_warehouse()
+# dataset.pull_order_data()
 # dataset.warehouse.to_excel('/home/misunderstood/temp/wh.xlsx', index = False)
 # dataset.pull_fees_dimensions()
 # dataset.pull_pricing()
 # dataset.pull_cogs()
 dataset.pull_promotions()
+# dataset.pull_inventory_history()
 print(time.perf_counter() - start)
+# dataset.inventory.to_excel('/home/misunderstood/inventory.xlsx')
 
 
 
@@ -26,10 +28,11 @@ asins = ['B00NLLUMOE','B00NQDGAP2','B00O35DAL4','B00O35CWQ8','B00SBZJ8NG','B08RZ
 # asins = dataset.dictionary['asin'].unique()
 
 # products = [Product(asin=x, dataset=dataset) for x in asins]
-# product = Product(asin='B00NQDGAP2', dataset=dataset)
+# product = Product(sku='M-BEDSHEETSET-QUEEN-SAGE', dataset=dataset)
+# product._pull_inventory_history()
 # product.populate_loop()
 # product.calculate_loop("2024-01-01", "2024-01-31")
-# print(product.stats['orders'])
+# product.inventory_history_df.to_excel('/home/misunderstood/temp/inventory_history.xlsx')
 
 
 
