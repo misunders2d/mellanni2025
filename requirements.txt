@@ -14,3 +14,5 @@ pandas-gbq
 pillow
 tkcalendar
 xlsxwriter
+
+git+https://github.com/misunders2d/helper-modules.git@master

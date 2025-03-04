@@ -18,7 +18,7 @@ class Report(ctk.CTk):
         self.control_frame.pack()
         self.button = ctk.CTkButton(self.control_frame, text='PULL', command=self.pull_bq)
         self.button.pack(side = 'left', padx = 10)
-        self.select_all = ctk.CTkCheckBox(self.control_frame, text='Select all', command=self.run_select_all)
+        self.select_all = ctk.CTkCheckBox(self.control_frame, text='Select all', command=self.run_select_all) #lambda: [label.select() if self.select_all.get() else label.deselect() for label in labels]
         self.select_all.pack(side = 'right', padx = 10)
         self.column_frame = ctk.CTkFrame(self, width=1200, height=600)
         self.column_frame.pack()
@@ -31,7 +31,6 @@ class Report(ctk.CTk):
                 label.select()
             else:
                 label.deselect()
-
 
     def pull_bq(self):
         table_name = self.table_list.get()

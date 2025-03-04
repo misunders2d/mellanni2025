@@ -1,13 +1,15 @@
 
 from utils.dataset import Dataset
 import pandas as pd
+from utils import mellanni_modules as mm
+import os
 import asyncio
 
 class Product:
     dataset = None
     def __init__(self,
-                 asin=None,
-                 sku=None,
+                 asin:str|list=None,
+                 sku:str|list=None,
                  dataset:Dataset=None):
         if not (asin or sku):
             raise ValueError("Either 'asin' or 'sku' must be provided.")
@@ -23,11 +25,16 @@ class Product:
         self.sizes = set()
         self.colors = set()
         Product.dataset = dataset
+        self.combined_dfs = {}
         self.stats = {}
-        if asin:
+        if asin and isinstance(asin, str):
             self.asins.add(asin)
-        if sku:
+        elif asin and isinstance(asin, list):
+            self.asins.update(asin)
+        if sku and isinstance(sku, str):
             self.skus.add(sku)
+        elif sku and isinstance(sku, list):
+            self.skus.update(sku)
         self._init_skus()
 
     def _init_skus(self):
@@ -191,65 +198,110 @@ class Product:
     def _calculate_br_asin(self, start, end):
         start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
         self.br_asin_df['date'] = pd.to_datetime(self.br_asin_df['date']).dt.date
-        self.br_asin = self.br_asin_df[
+        br_asin = self.br_asin_df[
             ['date', 'asin', 'browserSessions','browserSessionsB2B', 'mobileAppSessions',
              'mobileAppSessionsB2B','sessions', 'sessionsB2B', 'browserPageViews', 'country_code',
              'browserPageViewsB2B','mobileAppPageViews', 'mobileAppPageViewsB2B', 'pageViews','pageViewsB2B']
              ].copy()
 
-        self.br_asin = self.br_asin[(self.br_asin['date'] >= start) & (self.br_asin['date'] <= end)]
-        self.br_asin = self.br_asin.groupby(['country_code','date', 'asin']).agg('sum').reset_index()
-        sum_cols = self.br_asin.columns[3:]
+        br_asin = br_asin[(br_asin['date'] >= start) & (br_asin['date'] <= end)]
+        br_asin = br_asin.groupby(['country_code','date', 'asin']).agg('sum').reset_index()
+        sum_cols = br_asin.columns[3:]
         agg_dict = {col:'sum' for col in sum_cols}
         agg_dict['date'] = lambda x: [len(x),min(x), max(x)]
-        br_asin_sum = self.br_asin.groupby(['country_code', 'asin']).agg(agg_dict)
+        br_asin_sum = br_asin.groupby(['country_code', 'asin']).agg(agg_dict).reset_index()
         br_asin_sum[['# days','min_date','max_date']] = br_asin_sum['date'].tolist()
         del br_asin_sum['date']
-        self.stats['br_asin'] = br_asin_sum
+        self.combined_dfs['br_asin'] = br_asin
+        self.stats['br_asin_detailed'] = br_asin_sum
+        br_asin_total = br_asin_sum[
+            ['country_code','browserSessions', 'browserSessionsB2B','mobileAppSessions',
+             'mobileAppSessionsB2B', 'sessions', 'sessionsB2B','browserPageViews',
+             'browserPageViewsB2B', 'mobileAppPageViews','mobileAppPageViewsB2B',
+             'pageViews', 'pageViewsB2B', '# days']
+            ]
+        self.stats['br_asin_total'] = br_asin_total.groupby(['country_code']).agg('sum').reset_index()
 
     def _calculate_br(self, start, end):
         start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
         self.br_df['date'] = pd.to_datetime(self.br_df['date']).dt.date
-        self.br = self.br_df[
+        br = self.br_df[
             ['date', 'sku', 'asin', 'unitsOrdered', 'unitsOrderedB2B',
              'orderedProductSales', 'orderedProductSalesB2B','country_code']
             ].copy()
 
-        self.br = self.br[(self.br['date'] >= start) & (self.br['date'] <= end)]
-        self.br = self.br.groupby(['country_code','date', 'sku', 'asin']).agg('sum').reset_index()
+        br = br[(br['date'] >= start) & (br['date'] <= end)]
+        br = br.groupby(['country_code','date', 'sku', 'asin']).agg('sum').reset_index()
         
-        br_sum = self.br.groupby(['country_code', 'sku', 'asin']).agg(
+        br_sum = br.groupby(['country_code', 'sku', 'asin']).agg(
             {'unitsOrdered':'sum','unitsOrderedB2B':'sum',
              'orderedProductSales':'sum', 'orderedProductSalesB2B':'sum',
              'date':lambda x: [len(x),min(x), max(x)]}).reset_index()
         br_sum[['# days','min_date','max_date']] = br_sum['date'].tolist()
         del br_sum['date']
-        self.stats['br'] = br_sum
+        self.combined_dfs['br'] = br
+        self.stats['br_detailed'] = br_sum
+        br_total = br_sum[['country_code', 'unitsOrdered', 'unitsOrderedB2B',
+                       'orderedProductSales','orderedProductSalesB2B', '# days']]
+        self.stats['br_total'] = br_total.groupby(['country_code']).agg('sum').reset_index()
 
     def _calculate_orders(self, start, end):
         start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
         self.orders_df['pacific_date'] = pd.to_datetime(self.orders_df['pacific_date']).dt.date
-        self.orders = self.orders_df[(self.orders_df['pacific_date'] >= start) & (self.orders_df['pacific_date'] <= end)]
-        self.orders = self.orders.groupby(['pacific_date','sku','sales_channel']).agg({'units_sold':'sum', 'sales':'sum'}).reset_index()
-        orders_sum = self.orders.groupby(['sales_channel','sku']).agg(
+        orders = self.orders_df[(self.orders_df['pacific_date'] >= start) & (self.orders_df['pacific_date'] <= end)]
+        orders = orders.groupby(['pacific_date','sku','sales_channel']).agg({'units_sold':'sum', 'sales':'sum'}).reset_index()
+        orders_sum = orders.groupby(['sales_channel','sku']).agg(
             {'units_sold':'sum', 'sales':'sum', 'pacific_date':lambda x: [len(x),min(x), max(x)]}).reset_index()
         orders_sum[['# days','min_date','max_date']] = orders_sum['pacific_date'].tolist()
         del orders_sum['pacific_date']
-        self.stats['orders'] = orders_sum
+        self.combined_dfs['orders'] = orders
+        self.stats['orders_detailed'] = orders_sum
+        self.stats['orders_total'] = orders_sum.groupby('sales_channel')[['units_sold', 'sales', '# days']].agg('sum').reset_index()
         
     def _calculate_inventory(self, start, end):
         start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
         self.inventory_df['date'] = pd.to_datetime(self.inventory_df['date']).dt.date
-        self.inventory = self.inventory_df[(self.inventory_df['date'] >= start) & (self.inventory_df['date'] <= end)]
-        self.stats['inventory'] = self.inventory
+        inventory = self.inventory_df[(self.inventory_df['date'] >= start) & (self.inventory_df['date'] <= end)]
+        self.stats['inventory_detailed'] = inventory
+        inventory_total = inventory.drop(['date', 'sku', 'asin'], axis=1)
+        self.stats['inventory_total'] = inventory_total.groupby('marketplace').agg('sum').reset_index()
 
     def _calculate_inventory_history(self, start, end):
-        start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
+        start, end, today = pd.to_datetime(start).date(), pd.to_datetime(end).date(), (pd.to_datetime('today')-pd.Timedelta(days=1)).date()
+        if not 'inventory_history_df' in self.__dict__:
+            self._pull_inventory_history()
         self.inventory_history_df['date'] = pd.to_datetime(self.inventory_history_df['date']).dt.date
         self.inventory_history = self.inventory_history_df[(self.inventory_history_df['date'] >= start) & (self.inventory_history_df['date'] <= end)]
         self.inventory_history = self.inventory_history.groupby(
             ['date','sku','asin','marketplace']).agg('sum').reset_index()
-        self.stats['inventory'] = self.inventory_history
+        self.combined_dfs['inventory_history'] = self.inventory_history
+        isr_df = self.inventory_history.copy()
+        n_days = (min(end, today) - start).days
+        isr_df['in stock'] = isr_df['Inventory_Supply_at_FBA'] > 2
+        self.stats['isr_sku'] = isr_df.groupby(['sku','asin','marketplace']).agg({'in stock':'mean'}).reset_index() # replace with lambda x: sum(x)/n_days}) later
+        self.stats['isr_total'] = isr_df.groupby(['marketplace']).agg({'in stock':'mean'}).reset_index() # replace with lambda x: sum(x)/n_days}) later
+
+    def _calculate_advertised_product(self, start, end):
+        start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
+        self.advertised_product_df['date'] = pd.to_datetime(self.advertised_product_df['date']).dt.date
+        advertised_product = self.advertised_product_df[(self.advertised_product_df['date'] >= start) & (self.advertised_product_df['date'] <= end)]
+        self.stats['advertised_product_detailed'] = advertised_product
+        self.stats['advertised_product_breakdown'] = advertised_product.groupby(['country_code','sku','asin'])[
+           ['clicks', 'impressions', 'spend', 'sameSkuUnits','sameSkuSales']].agg('sum').reset_index().sort_values(['country_code','asin','sku'], ascending = False)        
+        self.stats['advertised_product_total'] = advertised_product.groupby('country_code')[
+            ['clicks', 'impressions', 'spend', 'sameSkuUnits','sameSkuSales']].agg('sum').reset_index()
+
+    def _calculate_purchased_product(self, start, end):
+        start, end = pd.to_datetime(start).date(), pd.to_datetime(end).date()
+        self.purchased_product_df['date'] = pd.to_datetime(self.purchased_product_df['date']).dt.date
+        purchased_product = self.purchased_product_df[(self.purchased_product_df['date'] >= start) & (self.purchased_product_df['date'] <= end)]
+        self.combined_dfs['purchased_product'] = purchased_product
+        self.stats['purchased_product_detailed'] = purchased_product.groupby(['country_code','sku','asin','purchasedAsin'])[
+            ['otherSkuUnits','otherSkuSales']].agg('sum').reset_index()
+        self.stats['purchased_product_breakdown'] = self.stats['purchased_product_detailed'].groupby(['country_code','purchasedAsin'])[
+           ['otherSkuUnits','otherSkuSales']].agg('sum').reset_index().sort_values(['country_code','otherSkuSales'], ascending = False)
+        self.stats['purchased_product_total'] = self.stats['purchased_product_detailed'].groupby('country_code')[
+           ['otherSkuUnits','otherSkuSales']].agg('sum').reset_index().sort_values('otherSkuSales', ascending = False)
 
     def calculate_loop(self, start, end):
         self._calculate_orders(start, end)
@@ -257,3 +309,13 @@ class Product:
         self._calculate_br_asin(start, end)
         self._calculate_inventory(start, end)
         self._calculate_inventory_history(start, end)
+        self._calculate_advertised_product(start, end)
+        self._calculate_purchased_product(start, end)
+
+    def export(self):
+        file_path = os.path.join(os.path.expanduser('~'), 'product_stats.xlsx')
+        with pd.ExcelWriter(file_path, engine='xlsxwriter') as writer:
+            for key, df in self.stats.items():
+                df.to_excel(writer, sheet_name=key, index=False)
+                mm.format_header(df, writer, key)
+        mm.open_file_folder(os.path.dirname(file_path))

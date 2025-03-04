@@ -6,7 +6,7 @@ from connectors import gdrive as gd
 from common import user_folder, excluded_collections
 import pandas as pd
 import numpy as np
-from gui.ctk_windows import PopupError, filedialog
+from gui import PopupError, filedialog
 
 drive_id = '0AMdx9NlXacARUk9PVA'
 
