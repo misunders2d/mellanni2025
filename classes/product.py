@@ -1,5 +1,5 @@
 
-from utils.dataset import Dataset
+from classes.dataset import Dataset
 import pandas as pd
 from utils import mellanni_modules as mm
 import os
