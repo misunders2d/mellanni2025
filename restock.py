@@ -8,7 +8,7 @@ from classes.dataset import Dataset
 from classes.product import Product
 
 start = time.perf_counter()
-dataset = Dataset(start="2025-01-01", end="2025-12-31", local_data=True, save=False, market=['US','CA'])
+dataset = Dataset(start="2025-01-01", end="2025-12-31", local_data=False, save=True, market=['US','CA'])
 # dataset.query_sync()
 dataset.query()
 # dataset.pull_order_data()

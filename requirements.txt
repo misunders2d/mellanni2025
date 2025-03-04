@@ -11,7 +11,9 @@ matplotlib
 openpyxl
 pandas
 pandas-gbq
+openai
 pillow
+pinecone
 tkcalendar
 xlsxwriter
 
