@@ -20,6 +20,7 @@ import asyncio
 START = "2025-01-01"
 END = "2025-12-31"
 MARKET = "US"
+default_market_list = ["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES"]
 CHANNEL = None
 LOCAL = True
 SAVE = False
@@ -37,15 +38,20 @@ channels_mapping = {
 
 class Dataset:
     def __init__(self, start: str = START, end: str = END,
-                 market: Literal["US", "CA", "GB", "UK" "MX", "FR", "DE", "IT", "ES"] | List[str] = MARKET,
+                 market: Literal["US", "CA", "GB", "UK" "MX", "FR", "DE", "IT", "ES", "*"] | List[str] = MARKET,
                  local_data: bool = LOCAL, save: bool = SAVE):
         self.client = gc.gcloud_connect()
         self.start = start
         self.end = end
         if isinstance(market, str):
-            self.market = market.upper() if market not in ("GB", "UK") else '","'.join(("GB","UK"))
-            self.channel = channels_mapping[market.upper()]
-            self.market_list = [market]
+            if market == '*':
+                self.channel = '","'.join([value for value in channels_mapping.values()])
+                self.market = '","'.join(default_market_list)
+                self.market_list = default_market_list
+            else:
+                self.channel = channels_mapping[market.upper()]
+                self.market = market.upper() if market.upper() not in ("GB", "UK") else '","'.join(("GB","UK"))
+                self.market_list = [market]
         elif isinstance(market, list):
             if any(("GB" in market, "UK" in market)):
                 market.extend(['GB','UK'])
@@ -79,7 +85,7 @@ class Dataset:
                         sessions, sessionsB2B,
                         browserPageViews, browserPageViewsB2B,
                         mobileAppPageViews, mobileAppPageViewsB2B,
-                        pageViews, pageViewsB2B, country_code
+                        pageViews, pageViewsB2B, buyBoxPercentage as buyBox, buyBoxPercentageB2B as buyBoxB2B, country_code
                         FROM `reports.business_report_asin`
                         WHERE DATE(date) >= DATE("{self.start}") AND  DATE(date) <= DATE("{self.end}")
                         AND country_code IN ("{self.market}")
@@ -102,7 +108,7 @@ class Dataset:
                         sessions, sessionsB2B,
                         browserPageViews, browserPageViewsB2B,
                         mobileAppPageViews, mobileAppPageViewsB2B,
-                        pageViews, pageViewsB2B, country_code
+                        pageViews, pageViewsB2B, buyBoxPercentage as buyBox, buyBoxPercentageB2B as buyBoxB2B, country_code
                         FROM `reports.business_report`
                         WHERE DATE(date) >= DATE("{self.start}") AND  DATE(date) <= DATE("{self.end}")
                         AND country_code IN ("{self.market}")
@@ -354,7 +360,7 @@ class Dataset:
         else:
             if not self.fba_shipments:
                 self.pull_fba_shipments_data()
-            shipment_item_ids = self.fba_shipments[['shipment_item_id','sku']].drop_duplicates()
+            shipment_item_ids = self.fba_shipments[['shipment_item_id','sku','sales_channel']].drop_duplicates()
             amazon_purchase_dates = self.fba_shipments[['amazon_order_id','pacific_date']].drop_duplicates()
             order_sales_data = self.fba_shipments[['shipment_item_id','units_sold','sales']].groupby('shipment_item_id').sum().reset_index()
             pandas_gbq.to_gbq(shipment_item_ids, destination_table='auxillary_development.temp_shipment_ids', if_exists='replace')
@@ -452,14 +458,20 @@ class Dataset:
         # self.warehouse = result
 
     def pull_changelog(self): # TODO add conditional to download sku_changelogs for different markets
+        changelog_markets = [x for x in self.market_list if x not in ("GB","MX")]
+        tables = {x:f'sku_changelog_{x.lower()}' if x != "US" else 'sku_changelog' for x in changelog_markets}
         if self.local_data:
             result = pd.read_csv(os.path.join(user_folder, 'changelog.csv'))
         else:
-            query = f'''SELECT DATE(date) AS date, sku, asin, change_type, notes,
-                        FROM `auxillary_development.sku_changelog`
-                        WHERE DATE(date) BETWEEN DATE("{self.start}") AND DATE("{self.end}")
-                        '''
-            result:pd.DataFrame = self.client.query(query).to_dataframe()
+            result = pd.DataFrame()
+            for country_code, table in tables.items():
+                query = f'''SELECT DATE(date) AS date, sku, change_type, notes,
+                            FROM `auxillary_development.{table}`
+                            WHERE DATE(date) BETWEEN DATE("{self.start}") AND DATE("{self.end}")
+                            '''
+                temp_result:pd.DataFrame = self.client.query(query).to_dataframe()
+                temp_result['country_code'] = country_code
+                result = pd.concat([result, temp_result])
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'changelog.csv'), index=False)
         self.changelog = result
