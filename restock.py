@@ -24,8 +24,9 @@ class Restock(ctk.CTk):
         self.executor = ThreadPoolExecutor()
         self.markets = []
         self.dataset = None
+        self.run_params = {}
         
-        # top frame
+        # top frame ##################################
         self.controls_frame = ctk.CTkFrame(self, width = width, height=80)
         self.controls_frame.grid_propagate(False)
         self.controls_frame.pack()
@@ -58,22 +59,26 @@ class Restock(ctk.CTk):
         self.__place_labels__(default_market_list)
 
         #query_button
-        self.dataset_button = ctk.CTkButton(self.controls_frame, text='Query', height=40, command=lambda: self.query_dataset(target='query'))
+        self.dataset_button = ctk.CTkButton(self.controls_frame, text='Load\ndataset', height=40, command=lambda: self.query_dataset(method='query'))
         self.dataset_button.grid(row=0, column = len(self.markets)//2 + 4, rowspan = 2)
 
-        #mid frame
+        # mid frame ########################################
         self.mid_frame = ctk.CTkFrame(self, width=width, height=400)
         self.mid_frame.grid_propagate(False)
         self.mid_frame.pack(pady=10)
+
         self.partial_update_label = ctk.CTkLabel(self.mid_frame, text='Update specific part')
         self.partial_update_label.grid(row=0, column=0, pady=10, padx=10)
         self.dataset_methods = ctk.CTkComboBox(
             self.mid_frame,
             values=sorted(list(method_list.keys())),
-            command=self.query_dataset)
+            command=lambda x: self.query_dataset(method=x))
         self.dataset_methods.grid(row=1, column=0)
 
-        #bottom frame
+        self.collections = ctk.CTkComboBox(self.mid_frame, values=None, state='disabled')
+        self.collections.grid(row=1, column=1)
+
+        # bottom frame ####################################
         self.bottom_frame = ctk.CTkFrame(self, width=width, height=100)
         self.bottom_frame.pack_propagate(False)
         self.bottom_frame.pack()
@@ -83,12 +88,14 @@ class Restock(ctk.CTk):
         self.progress.pack()
 
     def query_dataset(self, *args, **kwargs):
+        self.run_params['method']=kwargs['method']
         self.executor.submit(self.run_dataset_query)
 
-    def run_dataset_query(self, *args, **kwargs):
+    def run_dataset_query(self):
+        method = self.run_params.get('method')
         def call_method(obj, method_name):
             method = getattr(obj, method_name)  # Get the method by name
-            return method()        
+            return method()
         self.progress.start()
         self.status_label.configure(text='Please wait, pulling data...')
         self.dataset = Dataset(
@@ -98,13 +105,14 @@ class Restock(ctk.CTk):
             local_data = not self.data_selector.get(),
             save = self.data_selector.get())
         
-        call_method(self.dataset, self.dataset_methods.get()) #call a selected method from the dropdown on dataset
+        call_method(self.dataset, method) #call a selected method from the dropdown on dataset
 
         self.progress.stop()
         self.status_label.configure(
             text=f'Dataset queried for {self.start_date.get()} - {self.end_date.get()}, markets: {', '.join([x.cget('text') for x in self.markets if x.get()])} from {self.data_selector.cget('text')}'
             )
-
+        if method == 'query':
+            self.collections.configure(values=self.dataset.dictionary['collection'].unique(), state='normal')
 
     def __data_selection__(self):
         self.data_selector.configure(text="Cloud data") if self.data_selector.get() else self.data_selector.configure(text="Local data")

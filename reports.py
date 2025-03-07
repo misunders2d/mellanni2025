@@ -1,6 +1,8 @@
 from connectors import gcloud as gc
 import customtkinter as ctk
-import time
+from common import user_folder
+from utils import mellanni_modules as mm
+import time, os
 
 client = gc.gcloud_connect()
 tables = gc.get_tables('reports')
@@ -33,13 +35,27 @@ class Report(ctk.CTk):
                 label.deselect()
 
     def pull_bq(self):
-        table_name = self.table_list.get()
-        column_names = [label.cget("text") for label in self.labels if label.get()]
-        if column_names:
-            columns = ', '.join(column_names)
-            query = f'''SELECT {columns} FROM `reports.{table_name}` LIMIT 100'''
-            df = client.query(query).to_dataframe()
-            print(df)
+        query_string = self.query_field.get(0.0, ctk.END)
+        print(query_string)
+        # table_name = self.table_list.get()
+        # column_names = [label.cget("text") for label in self.labels if label.get()]
+        # if column_names:
+        #     columns = ', '.join(column_names)
+        #     query = f'''SELECT {columns} FROM `reports.{table_name}` LIMIT 100'''
+        df = client.query(query_string.strip()).to_dataframe()
+        print(df)
+        df.to_excel(os.path.join(user_folder, 'report_export.xlsx'), index = False)
+        mm.open_file_folder(user_folder)
+
+    def print_checkbox(self, *args, **kwargs):
+        checkboxes_list = [x.cget('text') for x in self. labels if x.get()]
+        checkbox_str = ', '.join(checkboxes_list)
+
+        self.query_field.delete(0.0, ctk.END)
+
+        self.query_field.insert(0.0, f'SELECT {checkbox_str} FROM reports.{self.table_list.get()} LIMIT 100')
+        
+
 
     def get_list_columns(self, table_name):
         schema = client.get_table(f'reports.{table_name}').schema
@@ -48,7 +64,11 @@ class Report(ctk.CTk):
                 label.destroy()
         self.labels = []
         for row in schema:
-            self.labels.append(ctk.CTkCheckBox(self.column_frame, text=row.name))
+            self.temp_checkbox = ctk.CTkCheckBox(
+                self.column_frame,
+                text=row.name,
+                command=self.print_checkbox)
+            self.labels.append(self.temp_checkbox)
         row_index = 0
         column_index = 0
         for label in self.labels:
