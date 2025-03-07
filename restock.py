@@ -67,22 +67,35 @@ class Restock(ctk.CTk):
         self.dataset_button.grid(row=0, column = len(self.markets)//2 + 4, rowspan = 2)
 
         # mid frame ########################################
-        self.mid_frame = ctk.CTkFrame(self, width=width, height=400)
+        self.mid_frame = ctk.CTkFrame(self, width=width, height=550)
         self.mid_frame.grid_propagate(False)
         self.mid_frame.pack(pady=10)
 
         self.partial_update_label = ctk.CTkLabel(self.mid_frame, text='Update specific part')
-        self.partial_update_label.grid(row=0, column=0, pady=10, padx=10)
+        self.partial_update_label.grid(row=0, column=0, pady=(0, 10), padx=10, sticky='n')
         self.dataset_methods = ctk.CTkComboBox(
             self.mid_frame,
+            width=200,
             values=sorted(list(method_list.keys())),
             command=lambda x: self.query_dataset(method=x))
-        self.dataset_methods.grid(row=1, column=0)
+        self.dataset_methods.grid(row=1, column=0, padx=10, sticky='n')
 
 
         self.collections_select = ctk.CTkCheckBox(self.mid_frame, text='Select all products', command=lambda: self.__select_all__('products'))
         self.collections_select.grid(row=0, column=1)
-        self.collections = tk.Listbox(self.mid_frame, width=40, background='gray', selectmode='multiple')
+        self.collections = tk.Listbox(
+            self.mid_frame,
+            activestyle='none',
+            fg='whitesmoke',
+            font=ctk.CTkFont(family='Helvetica',size=14),
+            width=40,
+            height=30,
+            border=0,
+            borderwidth=0,
+            background='#2e2e2e',
+            selectmode='multiple',
+            selectforeground='black',
+            selectbackground='limegreen')
         self.collections.grid(row=1, column=1)
 
         self.product_button = ctk.CTkButton(
