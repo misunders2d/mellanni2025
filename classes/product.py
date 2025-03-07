@@ -26,6 +26,7 @@ class Product:
         self.sizes = set()
         self.colors = set()
         Product.dataset = dataset
+        self.dataset_delete = False # delete the lines for this specific set of asins from Product.dataset
         self.combined_dfs = {}
         self.stats = {}
         if asin and isinstance(asin, str):
@@ -76,32 +77,38 @@ class Product:
     ### Populate data section ###
     def _pull_orders(self):
         self.orders_df = Product.dataset.orders[(Product.dataset.orders['sku'].isin(self.skus)) | (Product.dataset.orders['asin'].isin(self.asins))]
-        Product.dataset.orders = Product.dataset.orders[~Product.dataset.orders.index.isin(self.orders_df.index)]
+        if self.dataset_delete:
+            Product.dataset.orders = Product.dataset.orders[~Product.dataset.orders.index.isin(self.orders_df.index)]
         self._update_ids(self.orders_df)
 
     def _pull_br(self):
         self.br_df = Product.dataset.br[(Product.dataset.br['sku'].isin(self.skus)) | (Product.dataset.br['asin'].isin(self.asins))]
-        Product.dataset.br = Product.dataset.br[~Product.dataset.br.index.isin(self.br_df.index)]
+        if self.dataset_delete:
+            Product.dataset.br = Product.dataset.br[~Product.dataset.br.index.isin(self.br_df.index)]
         self._update_ids(self.br_df)
 
     def _pull_br_asin(self):
         self.br_asin_df = Product.dataset.br_asin[Product.dataset.br_asin['asin'].isin(self.asins)]
-        Product.dataset.br_asin = Product.dataset.br_asin[~Product.dataset.br_asin.index.isin(self.br_asin_df.index)]
+        if self.dataset_delete:
+            Product.dataset.br_asin = Product.dataset.br_asin[~Product.dataset.br_asin.index.isin(self.br_asin_df.index)]
         self._update_ids(self.br_asin_df)
 
     def _pull_inventory(self):
         self.inventory_df = Product.dataset.inventory[(Product.dataset.inventory['sku'].isin(self.skus)) | (Product.dataset.inventory['asin'].isin(self.asins))]
-        Product.dataset.inventory = Product.dataset.inventory[~Product.dataset.inventory.index.isin(self.inventory_df.index)]
+        if self.dataset_delete:
+            Product.dataset.inventory = Product.dataset.inventory[~Product.dataset.inventory.index.isin(self.inventory_df.index)]
         self._update_ids(self.inventory_df)
 
     def _pull_inventory_history(self):
         self.inventory_history_df = Product.dataset.inventory_history[(Product.dataset.inventory_history['sku'].isin(self.skus)) | (Product.dataset.inventory_history['asin'].isin(self.asins))]
-        Product.dataset.inventory_history = Product.dataset.inventory_history[~Product.dataset.inventory_history.index.isin(self.inventory_history_df.index)]
+        if self.dataset_delete:
+            Product.dataset.inventory_history = Product.dataset.inventory_history[~Product.dataset.inventory_history.index.isin(self.inventory_history_df.index)]
         self._update_ids(self.inventory_history_df)
 
     def _pull_advertised_product(self):
         self.advertised_product_df = Product.dataset.advertised_product[(Product.dataset.advertised_product['sku'].isin(self.skus)) | (Product.dataset.advertised_product['asin'].isin(self.asins))]
-        Product.dataset.advertised_product = Product.dataset.advertised_product[~Product.dataset.advertised_product.index.isin(self.advertised_product_df.index)]
+        if self.dataset_delete:
+            Product.dataset.advertised_product = Product.dataset.advertised_product[~Product.dataset.advertised_product.index.isin(self.advertised_product_df.index)]
         self._update_ids(self.advertised_product_df)
 
     def _pull_purchased_product(self):
@@ -113,39 +120,47 @@ class Product:
 
     def _pull_promotions(self):
         self.promotions_df = Product.dataset.promotions[(Product.dataset.promotions['sku'].isin(self.skus))]
-        Product.dataset.promotions = Product.dataset.promotions[~Product.dataset.promotions.index.isin(self.promotions_df.index)]
+        if self.dataset_delete:
+            Product.dataset.promotions = Product.dataset.promotions[~Product.dataset.promotions.index.isin(self.promotions_df.index)]
         self._update_ids(self.promotions_df)
 
     def _pull_returns(self):
         self.returns_df = Product.dataset.returns[(Product.dataset.returns['sku'].isin(self.skus)) | (Product.dataset.returns['asin'].isin(self.asins))]
-        Product.dataset.returns = Product.dataset.returns[~Product.dataset.returns.index.isin(self.returns_df.index)]
+        if self.dataset_delete:
+            Product.dataset.returns = Product.dataset.returns[~Product.dataset.returns.index.isin(self.returns_df.index)]
         self._update_ids(self.returns_df)
 
     def _pull_fees_dimensions(self):
         self.fees_dimensions_df = Product.dataset.fees[(Product.dataset.fees['sku'].isin(self.skus)) | (Product.dataset.fees['asin'].isin(self.asins))]
-        Product.dataset.fees = Product.dataset.fees[~Product.dataset.fees.index.isin(self.fees_dimensions_df.index)]
+        if self.dataset_delete:
+            Product.dataset.fees = Product.dataset.fees[~Product.dataset.fees.index.isin(self.fees_dimensions_df.index)]
         self._update_ids(self.fees_dimensions_df)
 
     def _pull_warehouse(self):
         self.warehouse_df = Product.dataset.warehouse[Product.dataset.warehouse['sku'].isin(self.skus)]
-        Product.dataset.warehouse = Product.dataset.warehouse[~Product.dataset.warehouse.index.isin(self.warehouse_df.index)]
+        if self.dataset_delete:
+            Product.dataset.warehouse = Product.dataset.warehouse[~Product.dataset.warehouse.index.isin(self.warehouse_df.index)]
         self._update_ids(self.warehouse_df)
     
     def _pull_changelog(self):
         self.changelog_df = Product.dataset.changelog[(Product.dataset.changelog['sku'].isin(self.skus))]
-        Product.dataset.changelog = Product.dataset.changelog[~Product.dataset.changelog.index.isin(self.changelog_df.index)]
+        if self.dataset_delete:
+            Product.dataset.changelog = Product.dataset.changelog[~Product.dataset.changelog.index.isin(self.changelog_df.index)]
     
     def _pull_incoming(self):
         self.incoming_df = Product.dataset.incoming[Product.dataset.incoming['sku'].isin(self.skus)]
-        Product.dataset.incoming = Product.dataset.incoming[~Product.dataset.incoming.index.isin(self.incoming_df.index)]
+        if self.dataset_delete:
+            Product.dataset.incoming = Product.dataset.incoming[~Product.dataset.incoming.index.isin(self.incoming_df.index)]
 
     def _pull_pricing(self):
         self.pricing_df = Product.dataset.pricing[Product.dataset.pricing['sku'].isin(self.skus)]
-        Product.dataset.pricing = Product.dataset.pricing[~Product.dataset.pricing.index.isin(self.pricing_df.index)]
+        if self.dataset_delete:
+            Product.dataset.pricing = Product.dataset.pricing[~Product.dataset.pricing.index.isin(self.pricing_df.index)]
 
     def _pull_cogs(self):
         self.cogs_df = Product.dataset.cogs[Product.dataset.cogs['sku'].isin(self.skus)]
-        Product.dataset.cogs = Product.dataset.cogs[~Product.dataset.cogs.index.isin(self.cogs_df.index)]
+        if self.dataset_delete:
+            Product.dataset.cogs = Product.dataset.cogs[~Product.dataset.cogs.index.isin(self.cogs_df.index)]
 
     ### async section ###
     async def _pull_data(self, pull_function):

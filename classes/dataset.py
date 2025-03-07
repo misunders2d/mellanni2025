@@ -12,6 +12,7 @@ from connectors import gcloud as gc
 from connectors import gdrive as gd
 from utils.mellanni_modules import week_number
 from common import events, excluded_collections, user_folder
+from ctk_gui.ctk_windows import PopupError
 user_folder = os.path.join(user_folder,'dataset')
 if not os.path.exists(user_folder):
     os.makedirs(user_folder)
@@ -72,10 +73,22 @@ class Dataset:
             self.pull_cogs
         ]
 
+    def __read_local__(self, file, *args, **kwargs):
+        if not os.path.exists(file):
+            PopupError(f"{file} not found!")
+            raise BaseException('Local file not found!')
+        try:
+            result = pd.read_csv(file, **kwargs)
+        except Exception as e:
+            PopupError(f"{e} error")
+            raise BaseException(f"Could not read from {file}")
+        return result
+
+
     def pull_br_asin_data(self):
         "pulls sessions data (detailed) per asin for all products regardless of sales"
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'br_asin.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'br_asin.csv'))
         else:
             query = f'''SELECT DATE(date) as date, childAsin as asin,
                         unitsOrdered, unitsOrderedB2B,
@@ -98,7 +111,7 @@ class Dataset:
     def pull_br_data(self):
         "pulls sales data per sku. only those skus that had at least 1 sale are pulled"
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'br.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'br.csv'))
         else:
             query = f'''SELECT DATE(date) as date, sku, childAsin as asin,
                         unitsOrdered, unitsOrderedB2B,
@@ -122,7 +135,7 @@ class Dataset:
         "pulls data from order reports, converting datetime to pacific timezone"
         if self.local_data:
             result = pd.DataFrame()
-            chunks = pd.read_csv(os.path.join(user_folder, 'orders.csv'), chunksize=100000)
+            chunks = self.__read_local__(os.path.join(user_folder, 'orders.csv'), chunksize=100000)
             for chunk in chunks:
                 result = pd.concat([result, chunk], ignore_index=True)
 
@@ -148,7 +161,7 @@ class Dataset:
     def pull_inventory_data(self):
         "pulls LATEST comprehensive inventory data from the new 'fba inventory' report to show stats for the latest date in the report or request"
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'inventory.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'inventory.csv'))
         else:
             result = pd.DataFrame()
             for marketplace in self.market_list:
@@ -185,7 +198,7 @@ class Dataset:
     def pull_inventory_history(self):
         "pulls inventory history (available) from the new 'fba inventory' report for the given period to identify isr"
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'inventory_history.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'inventory_history.csv'))
         else:
             query = f'''SELECT DATE(snapshot_date) AS date, sku, asin, available, Inventory_Supply_at_FBA, marketplace
                         FROM `reports.fba_inventory_planning`
@@ -200,7 +213,7 @@ class Dataset:
 
     def pull_dictionary(self): # TODO add conditional to download different self.markets' dictionaries
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'dictionary.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'dictionary.csv'))
         else:
             dictionary_id = gd.find_file_id(folder_id='1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4', filename='Dictionary.xlsx', drive_id='0AMdx9NlXacARUk9PVA')
             result:pd.DataFrame = pd.read_excel(gd.download_file(file_id=dictionary_id))
@@ -211,7 +224,7 @@ class Dataset:
 
     def pull_advertised_product_data(self):
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'advertised_product.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'advertised_product.csv'))
         else:
             query = f'''SELECT DATE(date) AS date, advertisedSku AS sku, advertisedAsin as asin,
                         SUM(clicks) AS clicks, SUM(impressions) as impressions, SUM(spend) AS spend,
@@ -229,7 +242,7 @@ class Dataset:
 
     def pull_purchased_product_data(self):
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'purchased_product.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'purchased_product.csv'))
         else:
             query = f'''SELECT DATE(date) AS date, advertisedSku AS sku, advertisedAsin as asin, purchasedAsin,
                         SUM(unitsSoldOtherSku14d) AS otherSkuUnits,
@@ -246,7 +259,7 @@ class Dataset:
 
     def pull_attribution_data(self): # NOT product specific
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'attribution.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'attribution.csv'))
         else:
             query = f'''SELECT DATE(date) AS date,
                         SUM(unitsSold14d) AS specificUnitsSold, SUM(totalUnitsSold14d) AS totalUnitsSold,
@@ -263,7 +276,7 @@ class Dataset:
 
     def pull_dsp_data(self): # NOT product specific
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'dsp.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'dsp.csv'))
         else:
             query = f'''SELECT DATE(date) AS date,
                         SUM(total_cost) AS total_cost, SUM(Impressions) AS impressions,
@@ -282,7 +295,7 @@ class Dataset:
 
     def pull_sba_data(self): # NOT product specific
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'sba.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'sba.csv'))
         else:
             query = f'''SELECT DATE(date) AS date,
                         SUM(cost) AS cost, SUM(clicks) AS clicks,
@@ -300,7 +313,7 @@ class Dataset:
 
     def pull_sbv_data(self): # NOT product specific
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'sbv.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'sbv.csv'))
         else:
             query = f'''SELECT DATE(date) AS date,
                         SUM(cost) AS cost, SUM(clicks) AS clicks,
@@ -319,7 +332,7 @@ class Dataset:
 
     def pull_sd_data(self): # NOT product specific
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'sd.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'sd.csv'))
         else:
             query = f'''SELECT DATE(date) AS date,
                         SUM(cost) AS cost, SUM(clicks) AS clicks,
@@ -337,7 +350,7 @@ class Dataset:
 
     def pull_fba_shipments_data(self):
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'fba_shipments.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'fba_shipments.csv'))
         else:
             query = f"""
                     SELECT
@@ -356,7 +369,7 @@ class Dataset:
     def pull_promotions(self):
         "generates promotions data from the 'shipment_item_id' list obtained from fba_shipments report"
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'promotions.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'promotions.csv'))
         else:
             if not self.fba_shipments:
                 self.pull_fba_shipments_data()
@@ -389,7 +402,7 @@ class Dataset:
     def pull_returns(self):
         "generates returns data from the 'amazon_order_is' list obtained from orders report"
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'returns.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'returns.csv'))
         else:
             if not isinstance(self.orders, pd.DataFrame):
                 self.pull_order_data()
@@ -411,7 +424,7 @@ class Dataset:
 
     def pull_fees_dimensions(self):
         if self.local_data:
-            fees = pd.read_csv(os.path.join(user_folder, 'fees.csv'))
+            fees = self.__read_local__(os.path.join(user_folder, 'fees.csv'))
         else:
             fees = size_match.main(out=False)
             if self.save:
@@ -421,7 +434,7 @@ class Dataset:
     def pull_warehouse(self):
         "pulls data from sellercloud, aggregating inventory stock at warehouse"
         if self.local_data:
-            warehouse = pd.read_csv(os.path.join(user_folder, 'warehouse.csv'))
+            warehouse = self.__read_local__(os.path.join(user_folder, 'warehouse.csv'))
         else:
             query = f"""
                     SELECT date, ProductID as sku, QtyAvailable, QtyPhysical, BinType, Sellable, BinName
@@ -461,7 +474,7 @@ class Dataset:
         changelog_markets = [x for x in self.market_list if x not in ("GB","MX")]
         tables = {x:f'sku_changelog_{x.lower()}' if x != "US" else 'sku_changelog' for x in changelog_markets}
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'changelog.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'changelog.csv'))
         else:
             result = pd.DataFrame()
             for country_code, table in tables.items():
@@ -478,7 +491,7 @@ class Dataset:
 
     def pull_incoming(self):
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'incoming.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'incoming.csv'))
         else:
             query = '''SELECT ExpectedDeliveryDate, Items FROM `mellanni-project-da.sellercloud.purchase_orders`
                         WHERE DATE(ExpectedDeliveryDate) >= DATE(CURRENT_DATE())
@@ -509,7 +522,7 @@ class Dataset:
             
     def pull_pricing(self):
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'pricing.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'pricing.csv'))
         else:
             result = gd.download_gspread(spreadsheet_id='1iB1CmY_XdOVA4FvLMPeiEGEcxiVEH3Bgp4FJs1iNmQs', sheet_id=0)
             result = result[['SKU','ASIN','Full price','Sale price','Discount','Date of last event (price change)','Status']]
@@ -521,7 +534,7 @@ class Dataset:
     def pull_cogs(self):
         "pulls data from product cost report"
         if self.local_data:
-            result = pd.read_csv(os.path.join(user_folder, 'cogs.csv'))
+            result = self.__read_local__(os.path.join(user_folder, 'cogs.csv'))
         else:
             query = f"""
                     SELECT sku, pc_value_usd as product_cost, start_date as date, channel

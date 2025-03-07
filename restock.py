@@ -1,7 +1,9 @@
 import pandas as pd, time, pickle
 import customtkinter as ctk
+import tkinter as tk
 from ctk_gui.ctk_windows import PopupGetDate
 from utils.mellanni_modules import user_folder
+from common import excluded_collections
 
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
@@ -60,6 +62,8 @@ class Restock(ctk.CTk):
 
         #query_button
         self.dataset_button = ctk.CTkButton(self.controls_frame, text='Load\ndataset', height=40, command=lambda: self.query_dataset(method='query'))
+        # self.dataset_button = ctk.CTkButton(self.controls_frame, text='Load\ndataset', height=40, command=self.dataset_query_loop)
+        
         self.dataset_button.grid(row=0, column = len(self.markets)//2 + 4, rowspan = 2)
 
         # mid frame ########################################
@@ -75,8 +79,30 @@ class Restock(ctk.CTk):
             command=lambda x: self.query_dataset(method=x))
         self.dataset_methods.grid(row=1, column=0)
 
-        self.collections = ctk.CTkComboBox(self.mid_frame, values=None, state='disabled')
+
+        self.collections_select = ctk.CTkCheckBox(self.mid_frame, text='Select all products', command=lambda: self.__select_all__('products'))
+        self.collections_select.grid(row=0, column=1)
+        self.collections = tk.Listbox(self.mid_frame, width=40, background='gray', selectmode='multiple')
         self.collections.grid(row=1, column=1)
+
+        self.product_button = ctk.CTkButton(
+            self.mid_frame,
+            text='No dataset detected',
+            state='disabled',
+            text_color_disabled='gray',
+            command=self.run_product_export)
+        self.product_button.grid(row=0, column=2)
+
+        self.product_date_from = ctk.CTkEntry(self.mid_frame, placeholder_text='Product date from')
+        self.product_date_from.bind("<Button-1>", lambda event: self.on_date_click(event, target='product_start_date'))
+        self.product_date_from.insert(0, start_date)
+        self.product_date_from.grid(row=0, column=3)
+
+        self.product_date_to = ctk.CTkEntry(self.mid_frame, placeholder_text='Product date to')
+        self.product_date_to.bind("<Button-1>", lambda event: self.on_date_click(event, target='product_end_date'))
+        self.product_date_to.insert(0, end_date)
+        self.product_date_to.grid(row=0, column=4)
+
 
         # bottom frame ####################################
         self.bottom_frame = ctk.CTkFrame(self, width=width, height=100)
@@ -87,9 +113,42 @@ class Restock(ctk.CTk):
         self.progress = ctk.CTkProgressBar(self.bottom_frame, width=int(width*0.8), mode='indeterminate')
         self.progress.pack()
 
+    def run_product_export(self):
+        self.executor.submit(self.export_product)
+
+
+    def export_product(self):
+        selected = self.collections.curselection()
+        selected_collections = [self.collections.get(x) for x in selected]
+        if selected_collections:
+            self.progress.start()
+            self.status_label.configure(text='Please wait, processing product(s)...')
+            asins = self.dataset.dictionary[self.dataset.dictionary['collection'].isin(selected_collections)]['asin'].unique().tolist()
+            date_from = self.product_date_from.get()
+            date_to = self.product_date_to.get()
+            product = Product(asin=asins, dataset=self.dataset)
+            product.populate_loop()
+            product.calculate_loop(start=date_from, end=date_to)
+            product.export()
+            self.progress.stop()
+            self.status_label.configure(text=f'Done, exported data for {len(asins)} items')
+
+    def dataset_query_loop(self):
+        self.dataset = Dataset(
+            start=self.start_date.get(),
+            end=self.end_date.get(),
+            market=[x.cget('text') for x in self.markets if x.get()],
+            local_data = not self.data_selector.get(),
+            save = self.data_selector.get())
+        self.dataset.query_sync()
+        self.update_status()
+
     def query_dataset(self, *args, **kwargs):
         self.run_params['method']=kwargs['method']
-        self.executor.submit(self.run_dataset_query)
+        if self.data_selector.get():
+            self.executor.submit(self.run_dataset_query)
+        else:
+            self.dataset_query_loop()
 
     def run_dataset_query(self):
         method = self.run_params.get('method')
@@ -106,13 +165,19 @@ class Restock(ctk.CTk):
             save = self.data_selector.get())
         
         call_method(self.dataset, method) #call a selected method from the dropdown on dataset
+        self.update_status()
 
+    def update_status(self):
         self.progress.stop()
         self.status_label.configure(
             text=f'Dataset queried for {self.start_date.get()} - {self.end_date.get()}, markets: {', '.join([x.cget('text') for x in self.markets if x.get()])} from {self.data_selector.cget('text')}'
             )
-        if method == 'query':
-            self.collections.configure(values=self.dataset.dictionary['collection'].unique(), state='normal')
+        self.product_button.configure(state='normal', text='Download\nproduct')
+        if self.run_params.get('method') == 'query':
+            collections = self.dataset.dictionary['collection'].unique().tolist()
+            collections = [x for x in collections if x not in excluded_collections]
+            self.collections.delete(0, tk.END)
+            [self.collections.insert(tk.END, c) for c in collections]
 
     def __data_selection__(self):
         self.data_selector.configure(text="Cloud data") if self.data_selector.get() else self.data_selector.configure(text="Local data")
@@ -129,16 +194,27 @@ class Restock(ctk.CTk):
             if row == 2:
                 row = 0
                 column += 1
-        self.select_all = ctk.CTkCheckBox(self.controls_frame, text='All', command=self.__select_all__)
+        self.select_all = ctk.CTkCheckBox(self.controls_frame, text='All', command=lambda: self.__select_all__('markets'))
         self.select_all.grid(row = row, column = column)
 
-    def __select_all__(self):
-        [x.select() if self.select_all.get() else x.deselect() for x in self.markets ]
+    def __select_all__(self, target):
+        if target=='markets':
+            [x.select() if self.select_all.get() else x.deselect() for x in self.markets ]
+        elif target=='products':
+            self.collections.select_set(0, tk.END) if self.collections_select.get() else self.collections.select_clear(0, tk.END)
     
     def on_date_click(self, event, target):
         selected_date = PopupGetDate().get_date()
         if selected_date:
-            widget = self.start_date if target == 'start_date' else self. end_date
+            if target == 'start_date':
+                widget = self.start_date
+            elif target == 'end_date':
+                widget = self.end_date
+            elif target == 'product_start_date':
+                widget = self.product_date_from
+            elif target == 'product_end_date':
+                widget = self.product_date_to
+
             widget.delete(0, ctk.END)
             widget.insert(0,selected_date)
 

@@ -14,6 +14,7 @@ pandas-gbq
 openai
 pillow
 pinecone
+pyside6
 tkcalendar
 xlsxwriter
 
