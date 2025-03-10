@@ -87,7 +87,8 @@ class Restock(ctk.CTk):
             self.mid_frame,
             activestyle='none',
             fg='whitesmoke',
-            font=ctk.CTkFont(family='Helvetica',size=14),
+            relief='flat',
+            font=ctk.CTkFont(family='Helvetica',size=12),
             width=40,
             height=30,
             border=0,
@@ -95,7 +96,7 @@ class Restock(ctk.CTk):
             background='#2e2e2e',
             selectmode='multiple',
             selectforeground='black',
-            selectbackground='limegreen')
+            selectbackground='lightblue')
         self.collections.grid(row=1, column=1)
 
         self.product_button = ctk.CTkButton(
