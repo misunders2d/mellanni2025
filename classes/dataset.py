@@ -5,6 +5,7 @@ import pandas as pd
 import pandas_gbq
 import os
 from typing import Literal, List
+from utils import mellanni_modules as mm
 
 from scripts import size_match
 
@@ -16,6 +17,7 @@ from ctk_gui.ctk_windows import PopupError
 user_folder = os.path.join(user_folder,'dataset')
 if not os.path.exists(user_folder):
     os.makedirs(user_folder)
+mm.open_file_folder(user_folder)
 import asyncio
 
 START = "2025-01-01"
