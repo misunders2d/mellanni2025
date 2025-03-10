@@ -98,7 +98,7 @@ def break_by_week(result:pd.DataFrame) -> pd.DataFrame:
         last_week = mm.week_number(datetime.datetime.now() - datetime.timedelta(days=7))
     two_weeks = last_week-1 if last_week>1 else 52
     result = result[result['week'].isin([last_week, two_weeks])]
-    weeks=sorted(result['reporting_week'].unique(), reverse = True)
+    weeks = sorted(result['reporting_week'].unique(), key=lambda x: int(x.split('-')[-1]), reverse=True)
     for week in weeks:
         temp = result[result['reporting_week']==week][['collection', 'sub_collection', 'sessions', 'units',
                'conversion','change_type']]
@@ -134,12 +134,13 @@ def add_totals(result_refined:pd.DataFrame) -> pd.DataFrame:
     return result_total
     
 def plot_data(df:pd.DataFrame, num_weeks:int=2) -> BytesIO:
-    weeks = sorted(df['reporting_week'].unique().tolist(), reverse=False)
+    weeks = sorted(df['reporting_week'].unique().tolist(), key = lambda x: int(x.split('-')[-1]), reverse=False)
     combined = df.pivot_table(
         values = ['sessions', 'units'],
         index = 'reporting_week',
         aggfunc='sum'
         ).reset_index()
+    combined = combined.sort_values('reporting_week', key=lambda x: x.str.split('-').str[-1].astype(int))
     combined['conversion'] = combined['units']/combined['sessions']
     fig, ax = plt.subplots(1,1, figsize=(10,6))
     ax.bar(combined['reporting_week'],combined['units'])
@@ -197,7 +198,7 @@ def export_to_excel(df:pd.DataFrame, plot_buf:BytesIO, market, target=None) -> N
     return None
 
 def process_data(start, market):
-    sales = pull_sales(start, market)
+    sales = pull_sales(start, market, report='business_asin')
     print(sales['units'].sum())
     dictionary = pull_dictionary(market)
     changes = pull_changes(start, market)
@@ -206,7 +207,7 @@ def process_data(start, market):
     changes_refined = clean_changes(changes, dictionary)
     
     result = pd.merge(sales_refined, changes_refined, how = 'left', on = ['year','week','collection','sub_collection'])
-    current_week = mm.week_number(pd.to_datetime(('today')))
+    current_week = mm.week_number(pd.to_datetime('today'))
     print(result['units'].sum())
     result = result[result['week'] != current_week]
     
@@ -281,19 +282,10 @@ def main():
     submit_button = ctk.CTkButton(
         app,
         text='Submit',
-        command=lambda:process_data_threaded(date_entry.get(), radio_var.get()))
+        command=lambda:process_data(date_entry.get(), radio_var.get()))
     submit_button.grid(row=2, column=0, columnspan=2, padx=10, pady=10)
 
     app.mainloop()
 
 if __name__ == '__main__':
     main()
-
-    # begin = time.perf_counter()
-    # # process_data()
-    # process_data_threaded()
-    # print(f'Processed data in {time.perf_counter()-begin:.1f} seconds')
-
-
-
-

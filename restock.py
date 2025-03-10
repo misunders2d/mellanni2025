@@ -198,7 +198,13 @@ class Restock(ctk.CTk):
             [self.collections.insert(tk.END, c) for c in collections]
 
     def __data_selection__(self):
-        self.data_selector.configure(text="Cloud data") if self.data_selector.get() else self.data_selector.configure(text="Local data")
+        if self.data_selector.get():
+            self.data_selector.configure(text="Cloud data")
+            self.start_date.configure(state='normal')
+        else:
+            self.data_selector.configure(text="Local data")
+            self.start_date.configure(state='disabled')
+
 
     def __place_labels__(self, market_list):
         row, column = 0, 3
@@ -222,19 +228,19 @@ class Restock(ctk.CTk):
             self.collections.select_set(0, tk.END) if self.collections_select.get() else self.collections.select_clear(0, tk.END)
     
     def on_date_click(self, event, target):
-        selected_date = PopupGetDate().get_date()
-        if selected_date:
-            if target == 'start_date':
-                widget = self.start_date
-            elif target == 'end_date':
-                widget = self.end_date
-            elif target == 'product_start_date':
-                widget = self.product_date_from
-            elif target == 'product_end_date':
-                widget = self.product_date_to
-
-            widget.delete(0, ctk.END)
-            widget.insert(0,selected_date)
+        if target == 'start_date':
+            widget = self.start_date
+        elif target == 'end_date':
+            widget = self.end_date
+        elif target == 'product_start_date':
+            widget = self.product_date_from
+        elif target == 'product_end_date':
+            widget = self.product_date_to
+        if widget.cget('state') =='normal':
+            selected_date = PopupGetDate().get_date()
+            if selected_date:
+                widget.delete(0, ctk.END)
+                widget.insert(0,selected_date)
 
 
 def main():
