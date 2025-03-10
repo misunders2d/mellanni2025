@@ -184,7 +184,7 @@ class Restock(ctk.CTk):
     def update_status(self):
         self.progress.stop()
         self.status_label.configure(
-            text=f'Dataset queried for {self.start_date.get()} - {self.end_date.get()}, markets: {', '.join([x.cget('text') for x in self.markets if x.get()])} from {self.data_selector.cget('text')}'
+            text=f'''Dataset queried for {self.start_date.get()} - {self.end_date.get()}, markets: {', '.join([x.cget('text') for x in self.markets if x.get()])} from {self.data_selector.cget('text')}'''
             )
         self.product_button.configure(state='normal', text='Download\nproduct')
         if self.run_params.get('method') == 'query':
