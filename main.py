@@ -24,6 +24,9 @@ class MainApp(ctk.CTk):
         self.weekly_conversion_button = ctk.CTkButton(self.reports_frame, text='Weekly conversion', command=self.call_weekly_conversion)
         self.weekly_conversion_button.grid(row=1, column=0, padx=self.xspacing, pady=self.yspacing)
 
+        self.restock_button = ctk.CTkButton(self.reports_frame, text='Restock', command=self.call_restock)
+        self.restock_button.grid(row=2, column=0, padx=self.xspacing, pady=self.yspacing)
+
         #tools section
         self.coupon_helper_button = ctk.CTkButton(self.tools_frame, text='Coupon helper', command=self.call_coupon_helper)
         self.coupon_helper_button.grid(row=0, column=0, padx=self.xspacing, pady=self.yspacing)
@@ -41,6 +44,11 @@ class MainApp(ctk.CTk):
         import subprocess
         subprocess.call(['git','pull'])
         subprocess.call(['pip','install','-r','requirements.txt'])
+
+    def call_restock(self):
+        import restock
+        self.after(200, self.destroy())
+        restock.main()
 
     def call_price_checker(self):
         from scripts import price_checker

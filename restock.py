@@ -1,4 +1,4 @@
-import pandas as pd, time, pickle
+import pandas as pd, time, pickle, os
 import customtkinter as ctk
 import tkinter as tk
 from ctk_gui.ctk_windows import PopupGetDate
@@ -12,6 +12,10 @@ warnings.filterwarnings('ignore')
 
 from classes.dataset import Dataset
 from classes.product import Product
+
+if not os.path.exists('credentials'):
+    raise BaseException('Credentials folder not found!')
+
 method_list = {name:func for name, func in Dataset.__dict__.items() if name.startswith('pull')}
 
 start_date = "2025-01-01"
