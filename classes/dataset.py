@@ -550,7 +550,7 @@ class Dataset:
             result = self.__read_local__(os.path.join(user_folder, 'cogs.csv'))
         else:
             query = f"""
-                    SELECT sku, pc_value_usd as product_cost, start_date as date, channel
+                    SELECT sku, pc_value_usd as product_cost, pc_value_local as product_cost_local, start_date as date, channel
                     FROM `ds_for_bi.product_cost_hist`
                     WHERE DATE(start_date) = (
                         SELECT MAX(DATE(start_date)) FROM `ds_for_bi.product_cost_hist` WHERE DATE(start_date)<=DATE("{self.end}")
