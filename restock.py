@@ -1,8 +1,8 @@
-import pandas as pd, time, pickle, os
+import pandas as pd, time, pickle, os, re
 import customtkinter as ctk
 import tkinter as tk
 from ctk_gui.ctk_windows import PopupGetDate
-from utils.mellanni_modules import user_folder
+from utils.mellanni_modules import user_folder, open_file_folder
 from common import excluded_collections
 
 from concurrent.futures import ThreadPoolExecutor
@@ -87,6 +87,9 @@ class Restock(ctk.CTk):
 
         self.collections_select = ctk.CTkCheckBox(self.mid_frame, text='Select all products', command=lambda: self.__select_all__('products'))
         self.collections_select.grid(row=0, column=1)
+        #collection
+        self.collection_label = ctk.CTkLabel(self.mid_frame, text='Collection')
+        self.collection_label.grid(row=1, column=1)
         self.collections = tk.Listbox(
             self.mid_frame,
             activestyle='none',
@@ -100,8 +103,57 @@ class Restock(ctk.CTk):
             background='#2e2e2e',
             selectmode='multiple',
             selectforeground='black',
-            selectbackground='lightblue')
-        self.collections.grid(row=1, column=1)
+            selectbackground='lightblue',
+            exportselection=False)
+        self.collections.bind('<<ListboxSelect>>', self.__on_collection_select__)
+        self.collections.grid(row=2, column=1, rowspan=3, padx=5)
+
+        #size
+        self.size_select = ctk.CTkCheckBox(self.mid_frame, text='select all sizes', command=lambda: self.__select_all__('sizes'))
+        self.size_select.grid(row=1, column=2)
+        self.sizes = tk.Listbox(
+            self.mid_frame,
+            activestyle='none',
+            fg='whitesmoke',
+            relief='flat',
+            font=ctk.CTkFont(family='Helvetica',size=12),
+            width=40,
+            height=12,
+            border=0,
+            borderwidth=0,
+            background='#2e2e2e',
+            selectmode='multiple',
+            selectforeground='black',
+            selectbackground='lightblue',
+            exportselection=False)
+        self.sizes.bind('<<ListboxSelect>>', self.__on_size_select__)
+        self.sizes.grid(row=2, column=2, sticky='n', padx=5)
+
+        #color
+        self.color_select = ctk.CTkCheckBox(self.mid_frame, text='select all colors', command=lambda: self.__select_all__('colors'))
+        self.color_select.grid(row=3, column=2)
+        self.colors = tk.Listbox(
+            self.mid_frame,
+            activestyle='none',
+            fg='whitesmoke',
+            relief='flat',
+            font=ctk.CTkFont(family='Helvetica',size=12),
+            width=40,
+            height=13,
+            border=0,
+            borderwidth=0,
+            background='#2e2e2e',
+            selectmode='multiple',
+            selectforeground='black',
+            selectbackground='lightblue',
+            exportselection=False)
+        # self.colors.bind('<<ListboxSelect>>', self.__on_color_select__)
+        self.colors.grid(row=4, column=2, sticky='s', padx=5)
+
+        self.skus_label = ctk.CTkLabel(self.mid_frame, text='SKU/ASIN search')
+        self.skus_label.grid(row=1, column=3)
+        self.skus_input = ctk.CTkTextbox(self.mid_frame)
+        self.skus_input.grid(row=2, column=3,columnspan=2, sticky='n', padx=5)
 
         self.product_button = ctk.CTkButton(
             self.mid_frame,
@@ -111,12 +163,12 @@ class Restock(ctk.CTk):
             command=self.run_product_export)
         self.product_button.grid(row=0, column=2)
 
-        self.product_date_from = ctk.CTkEntry(self.mid_frame, placeholder_text='Product date from')
+        self.product_date_from = ctk.CTkEntry(self.mid_frame, placeholder_text='Product date from', width=80)
         self.product_date_from.bind("<Button-1>", lambda event: self.on_date_click(event, target='product_start_date'))
         self.product_date_from.insert(0, start_date)
         self.product_date_from.grid(row=0, column=3)
 
-        self.product_date_to = ctk.CTkEntry(self.mid_frame, placeholder_text='Product date to')
+        self.product_date_to = ctk.CTkEntry(self.mid_frame, placeholder_text='Product date to', width=80)
         self.product_date_to.bind("<Button-1>", lambda event: self.on_date_click(event, target='product_end_date'))
         self.product_date_to.insert(0, end_date)
         self.product_date_to.grid(row=0, column=4)
@@ -134,16 +186,30 @@ class Restock(ctk.CTk):
     def run_product_export(self):
         self.executor.submit(self.export_product)
 
-
     def export_product(self):
-        selected = self.collections.curselection()
-        selected_collections = [self.collections.get(x) for x in selected]
-        if selected_collections:
+        selected_skus = [x for x in re.split(r'[,\n\r\t]+', self.skus_input.get(0.0, ctk.END).strip()) if x]
+        selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
+        selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
+        selected_colors = [self.colors.get(x) for x in self.colors.curselection()]
+        selected_asins = self.dataset.dictionary[
+            (self.dataset.dictionary['collection'].isin(selected_collections))
+            &
+            (self.dataset.dictionary['size'].isin(selected_sizes))
+            &
+            (self.dataset.dictionary['color'].isin(selected_colors))
+            ]['asin'].unique().tolist()
+        if any([selected_skus, selected_asins]):
             self.progress.start()
             self.status_label.configure(text='Please wait, processing product(s)...')
-            asins = self.dataset.dictionary[self.dataset.dictionary['collection'].isin(selected_collections)]['asin'].unique().tolist()
             date_from = self.product_date_from.get()
             date_to = self.product_date_to.get()
+
+            if selected_skus:
+                asins = self.dataset.dictionary[
+                    (self.dataset.dictionary['sku'].isin(selected_skus)) | (self.dataset.dictionary['asin'].isin(selected_skus))
+                    ]['asin'].unique().tolist()
+            elif selected_asins:
+                asins = selected_asins
             product = Product(asin=asins, dataset=self.dataset)
             product.populate_loop()
             product.calculate_loop(start=date_from, end=date_to)
@@ -184,6 +250,7 @@ class Restock(ctk.CTk):
         
         call_method(self.dataset, method) #call a selected method from the dropdown on dataset
         self.update_status()
+        open_file_folder(user_folder)
 
     def update_status(self):
         self.progress.stop()
@@ -192,10 +259,40 @@ class Restock(ctk.CTk):
             )
         self.product_button.configure(state='normal', text='Download\nproduct')
         if self.run_params.get('method') == 'query':
-            collections = self.dataset.dictionary['collection'].unique().tolist()
+            collections = sorted(self.dataset.dictionary['collection'].unique().tolist())
             collections = [x for x in collections if x not in excluded_collections]
             self.collections.delete(0, tk.END)
             [self.collections.insert(tk.END, c) for c in collections]
+
+    def __on_collection_select__(self, *args):
+        selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
+        potential_sizes = self.dataset.dictionary[self.dataset.dictionary['collection'].isin(selected_collections)]['size'].unique().tolist()
+        self.sizes.delete(0, ctk.END)
+        if potential_sizes:
+            [self.sizes.insert(tk.END, ps) for ps in sorted(potential_sizes)]
+
+    def __on_size_select__(self, *args):
+        selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
+        selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
+        potential_colors = self.dataset.dictionary[
+            (self.dataset.dictionary['collection'].isin(selected_collections)) & (self.dataset.dictionary['size'].isin(selected_sizes))
+            ]['color'].unique().tolist()
+        self.colors.delete(0, ctk.END)
+        if potential_colors:
+            [self.colors.insert(tk.END, color) for color in sorted(potential_colors)]
+
+    def __on_color_select__(self, *args):
+        selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
+        selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
+        selected_colors = [self.colors.get(x) for x in self.colors.curselection()]
+        selected_asins = self.dataset.dictionary[
+            (self.dataset.dictionary['collection'].isin(selected_collections))
+            &
+            (self.dataset.dictionary['size'].isin(selected_sizes))
+            &
+            (self.dataset.dictionary['color'].isin(selected_colors))
+            ]['asin'].unique().tolist()
+
 
     def __data_selection__(self):
         if self.data_selector.get():
@@ -204,7 +301,6 @@ class Restock(ctk.CTk):
         else:
             self.data_selector.configure(text="Local data")
             self.start_date.configure(state='disabled')
-
 
     def __place_labels__(self, market_list):
         row, column = 0, 3
@@ -225,7 +321,26 @@ class Restock(ctk.CTk):
         if target=='markets':
             [x.select() if self.select_all.get() else x.deselect() for x in self.markets ]
         elif target=='products':
-            self.collections.select_set(0, tk.END) if self.collections_select.get() else self.collections.select_clear(0, tk.END)
+            if self.collections_select.get():
+                self.collections.select_set(0, tk.END)
+                self.__on_collection_select__()
+            else:
+                self.collections.select_clear(0, tk.END)
+                self.__on_collection_select__()
+        elif target=='sizes':
+            if self.size_select.get():
+                self.sizes.select_set(0, tk.END)
+                self.__on_size_select__()
+            else:
+                self.sizes.select_clear(0, tk.END)
+                self.__on_size_select__()
+        elif target=='colors':
+            if self.color_select.get():
+                self.colors.select_set(0, tk.END)
+                # self.__on_color_select__()
+            else:
+                self.colors.select_clear(0, tk.END)
+                # self.__on_color_select__()
     
     def on_date_click(self, event, target):
         if target == 'start_date':

@@ -17,7 +17,6 @@ from ctk_gui.ctk_windows import PopupError
 user_folder = os.path.join(user_folder,'dataset')
 if not os.path.exists(user_folder):
     os.makedirs(user_folder)
-mm.open_file_folder(user_folder)
 import asyncio
 
 START = "2025-01-01"
@@ -217,8 +216,20 @@ class Dataset:
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'dictionary.csv'))
         else:
-            dictionary_id = gd.find_file_id(folder_id='1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4', filename='Dictionary.xlsx', drive_id='0AMdx9NlXacARUk9PVA')
-            result:pd.DataFrame = pd.read_excel(gd.download_file(file_id=dictionary_id))
+            result = pd.DataFrame()
+            dict_ids = {
+                'US':('1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4','Dictionary.xlsx'),
+                'UK':('1vt8UB2FeQp0RJimnCATI8OQt5N-bysx-', 'Dictionary_UK.xlsx'),
+                'EU':('1uye8_FNxI11ZUOKnUYUfko1vqwpJVnMj','Dictionary_EU.xlsx'),
+                'CA':('1ZijSZTqY1_5F307uMkdcneqTKIoNSsds','Dictionary_CA.xlsx')
+                }
+            for market, (folder_id, file_name) in dict_ids.items():
+                dictionary_id = gd.find_file_id(folder_id=folder_id, filename=file_name, drive_id='0AMdx9NlXacARUk9PVA')
+                temp:pd.DataFrame = pd.read_excel(gd.download_file(file_id=dictionary_id))
+                temp['marketplace'] = market
+                result = pd.concat([result, temp])
+            
+            result = result.dropna(subset='Collection')
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'dictionary.csv'), index=False)
         self.dictionary = result
