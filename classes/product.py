@@ -2,6 +2,7 @@
 from classes.dataset import Dataset
 import pandas as pd
 from utils import mellanni_modules as mm
+from common import user_folder
 import os
 import asyncio
 from numpy import nan
@@ -419,8 +420,8 @@ class Product:
 
 
     def export(self):
-        file_path_stats = os.path.join(os.path.expanduser('~'), 'product_stats.xlsx')
-        file_path_details = os.path.join(os.path.expanduser('~'), 'product_details.xlsx')
+        file_path_stats = os.path.join(user_folder, 'product_stats.xlsx')
+        file_path_details = os.path.join(user_folder, 'product_details.xlsx')
         with pd.ExcelWriter(file_path_stats, engine='xlsxwriter') as writer:
             for key, df in self.stats.items():
                 df.to_excel(writer, sheet_name=key, index=False)
