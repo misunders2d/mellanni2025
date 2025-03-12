@@ -91,7 +91,8 @@ class Dataset:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
-                PopupError(f'function {func} returned an error:\n{e}')
+                error_str = f'function {func} returned an error:\n{e}'
+                PopupError(message=error_str)
         return wrapper
 
     @error_checker

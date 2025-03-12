@@ -3,6 +3,7 @@ import customtkinter as ctk
 import tkinter as tk
 from ctk_gui.ctk_windows import PopupGetDate
 from utils.mellanni_modules import user_folder, open_file_folder
+from utils.events import event_dates
 from common import excluded_collections
 
 from concurrent.futures import ThreadPoolExecutor
@@ -360,6 +361,38 @@ class Restock(ctk.CTk):
                 widget.delete(0, ctk.END)
                 widget.insert(0,selected_date)
 
+def get_event_sales():
+    """calculates pre-event and event averages for all SKUs since 2022"""
+    dataset = Dataset(start="2022-01-01", end="2025-12-31", market="US", local_data=False, save=False)
+    dataset.pull_br_data()
+    sales = dataset.br.copy()
+
+    sales = sales[['date','sku','unitsOrdered']]
+    sales['date'] = pd.to_datetime(sales['date']).dt.date
+    sales = sales.sort_values(['date','sku'])
+    sales = sales[~sales['sku'].str.lower().str.contains('.missing|.found')]
+    non_event_sales = sales[~sales['date'].isin([d for value in event_dates.values() for d in value])]
+    event_sales = sales[sales['date'].isin([d for value in event_dates.values() for d in value])]
+
+    result = pd.DataFrame()
+    skus = sales['sku'].unique().tolist()
+    for sku in skus:
+        sku_event_sales = event_sales[event_sales['sku'] == sku]
+        sku_non_event_sales = non_event_sales[non_event_sales['sku'] == sku]
+        
+        sku_file = pd.DataFrame(data=[sku], columns=['sku'])
+        for event, dates in event_dates.items():
+            pre_event_sales = sku_non_event_sales[sku_non_event_sales['date'].between(min(dates)-pd.Timedelta(days=61), min(dates), inclusive='left')]
+            the_event_sales = sku_event_sales[sku_event_sales['date'].between(min(dates), max(dates), inclusive='both')]
+            sku_file[f'pre-{event} average sales'] = pre_event_sales['unitsOrdered'].mean()
+            sku_file[f'{event} units sold'] = the_event_sales['unitsOrdered'].sum()
+            sku_file[f'{event} duration, days'] = len(the_event_sales['unitsOrdered'])
+            sku_file[f'{event} average sales'] = sku_file[f'{event} units sold'] /  sku_file[f'{event} duration, days']
+            sku_file[f'{event} X increase'] = sku_file[f'{event} average sales'] / sku_file[f'pre-{event} average sales']
+    
+        result = pd.concat([result, sku_file])
+    
+    result.to_excel(os.path.join(user_folder, 'event_sales.xlsx'), index=False)    
 
 def main():
     app = Restock()
@@ -368,133 +401,3 @@ def main():
 if __name__ == "__main__":
     main()
 
-
-def temp():
-    start = time.perf_counter()
-    dataset = Dataset(start=start_date, end=end_date, local_data=True, save=False, market="*")
-    # dataset.query_sync()
-    dataset.query()
-    # dataset.pull_advertised_product_data()
-    # dataset.pull_purchased_product_data()
-    # dataset.pull_changelog()
-    # dataset.warehouse.to_excel('/home/misunderstood/temp/wh.xlsx', index = False)
-    # dataset.pull_fees_dimensions()
-    # dataset.pull_pricing()
-    # dataset.pull_cogs()
-    # dataset.pull_promotions()
-    # dataset.pull_inventory_history()
-    # dataset.pull_dictionary()
-    # dataset.inventory.to_excel('/home/misunderstood/inventory.xlsx')
-
-
-    def aggregate_ppc_data(dataset):
-        # advertised = dataset.
-        pass
-
-
-
-    # asins = dataset.dictionary[dataset.dictionary['collection'].str.lower().str.contains('zipper')]['asin'].unique().tolist()
-    # asins = dataset.dictionary['asin'].unique().tolist()
-
-    # products = Product(asin = asins, dataset = dataset)
-    products = Product(sku = ['FAUX-FUR-TH_BLANKET-60X80-TH-BLACK','FAUX-FUR-TH_BLANKET-50X60-TH-BLACK','M-Flat-Sheet-F-Gray-FBA',
-                            'M-VELVET-ULTRASONIC-K-CK-BLUSH-PINK','M-Flat-Sheet-Q-Royal-Blue-FBA','M-21-FITTED-SHEET-K-IMPERIAL-BLUE',
-                            'M-Flat-Sheet-F-Beige-FBA','M-21-FITTED-SHEET-CK-IMPERIAL-BLUE','M-21-FITTED-SHEET-CK-BEIGE',
-                            'M-21-FITTED-SHEET-CK-BURGUNDY'],
-                            dataset=dataset)
-    # products = [Product(asin=asin, dataset = dataset) for asin in asins]
-    # products = products[100:300]
-
-    def process_single_prduct(products, start = start_date, end = end_date):
-        products.populate_loop()
-        # products._calculate_incoming(start, end)
-        products.calculate_loop(start, end)
-        products.export()
-
-    def process_products(products, start = start_date, end = end_date):
-        """a set of async functions that run "populate" and "calculcate" methods on each product"""
-        
-        async def populate_product(product: Product): #async populate a list of products
-            await product.populate()
-        async def populate_products(products):
-            total_products = len(products)
-            tasks = [populate_product(product) for product in products]
-            for task in asyncio.as_completed(tasks):
-                await task
-                total_products -= 1
-                print(f"\r{' ' * 150}\rProducts to populate remaining: {total_products}", end='', flush=True)
-            print()
-            # await asyncio.gather(*tasks)
-
-        async def calculcate_product(product: Product):
-            await product.calculate(start, end)
-        async def calculcate_products(products):
-            total_products = len(products)
-            tasks = [calculcate_product(product) for product in products]
-            for task in asyncio.as_completed(tasks):
-                await task
-                total_products -= 1
-                print(f"\r{' ' * 150}\rProducts to calculate remaining: {total_products}", end='', flush=True)
-            print()
-
-        asyncio.run(populate_products(products))
-        asyncio.run(calculcate_products(products))
-
-    process_single_prduct(products, start="2025-02-15")
-    # process_products(products)
-
-
-
-        # product.calculate_loop(start_date, end_date)
-    # products.export()
-    # product = Product(asin='B0822X1VP7', dataset=dataset)
-    # product._calculate_inventory_history(start=start_date, end=end_date)
-    # product._pull_inventory_history()
-    # products.populate_loop()
-    # products.calculate_loop("2025-02-28", end_date)
-    # product.inventory_history_df.to_excel('/home/misunderstood/temp/inventory_history.xlsx')
-
-    print(f'Total time: {time.perf_counter() - start:.1f} seconds')
-
-    # with open('/home/misunderstood/temp/products.pkl','rb') as f:
-    #     products = pickle.load(f)
-
-    # for product in products:
-    #     try:
-    #         # product.populate_loop()
-    #         product._calculate_inventory_history(start=start_date, end=end_date)
-    #     except Exception as e:
-    #         print(f'Population error with {product.asins}: {e}')
-    # with open('/home/misunderstood/temp/products.pkl','wb') as f:
-    #     pickle.dump(products, f)
-    # try:
-    #     product.calculate_loop(start_date, end_date)
-    # except Exception as e:
-    #     print(f'Calculation error with {product.asins}: {e}')
-    # print(product.stats)
-
-
-    # async def populate_product(product:Product):
-    #     await asyncio.to_thread(product.populate_loop)
-
-    # async def main():
-    #     tasks = [populate_product(product) for product in products]
-    #     await asyncio.gather(*tasks)
-
-    # start = time.perf_counter()
-    # asyncio.run(main())
-    # end = time.perf_counter() - start
-    # print('async loop finished in ', round(end, 3), ' seconds')
-
-
-
-    # product = [x for x in products if 'B00NQDGAP2' in x.asins][0]
-    # # product = Product(sku='M-BEDSHEETSET-T-OXP-SAGE', dataset=dataset)
-    # # # print(product.orders_df)
-    # product.populate_loop()
-    # # # product.calculate_loop(start_date, end_date)
-
-    # product._calculate_inventory(start_date, end_date)
-    # # print(product.stats)
-    # print(product.inventory)
-    # product.inventory.to_excel('/home/misunderstood/temp/product_inventory.xlsx', index=False)
