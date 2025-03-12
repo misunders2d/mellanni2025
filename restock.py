@@ -218,6 +218,7 @@ class Restock(ctk.CTk):
             self.status_label.configure(text=f'Done, exported data for {len(asins)} items')
 
     def dataset_query_loop(self):
+        self.start = time.perf_counter()
         self.dataset = Dataset(
             start=self.start_date.get(),
             end=self.end_date.get(),
@@ -235,6 +236,7 @@ class Restock(ctk.CTk):
             self.dataset_query_loop()
 
     def run_dataset_query(self):
+        self.start = time.perf_counter()
         method = self.run_params.get('method')
         def call_method(obj, method_name):
             method = getattr(obj, method_name)  # Get the method by name
@@ -253,9 +255,10 @@ class Restock(ctk.CTk):
         open_file_folder(user_folder)
 
     def update_status(self):
+        total_time = time.perf_counter() - self.start
         self.progress.stop()
         self.status_label.configure(
-            text=f'''Dataset queried for {self.start_date.get()} - {self.end_date.get()}, markets: {', '.join([x.cget('text') for x in self.markets if x.get()])} from {self.data_selector.cget('text')}'''
+            text=f'''Dataset queried for {self.start_date.get()} - {self.end_date.get()}, markets: {', '.join([x.cget('text') for x in self.markets if x.get()])} from {self.data_selector.cget('text')} in {total_time:.1f} seconds'''
             )
         self.product_button.configure(state='normal', text='Download\nproduct')
         if self.run_params.get('method') == 'query':

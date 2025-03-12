@@ -86,7 +86,15 @@ class Dataset:
             raise BaseException(f"Could not read from {file}")
         return result
 
+    def error_checker(func):
+        def wrapper(*args, **kwargs):
+            try:
+                return func(*args, **kwargs)
+            except Exception as e:
+                PopupError(f'function {func} returned an error:\n{e}')
+        return wrapper
 
+    @error_checker
     def pull_br_asin_data(self):
         "pulls sessions data (detailed) per asin for all products regardless of sales"
         if self.local_data:
@@ -109,7 +117,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'br_asin.csv'), index=False)
         self.br_asin = result
-
+    @error_checker
     def pull_br_data(self):
         "pulls sales data per sku. only those skus that had at least 1 sale are pulled"
         if self.local_data:
@@ -132,7 +140,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'br.csv'), index=False)
         self.br = result
-
+    @error_checker
     def pull_order_data(self):
         "pulls data from order reports, converting datetime to pacific timezone"
         if self.local_data:
@@ -159,7 +167,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'orders.csv'), index=False)
         self.orders = result
-        
+    @error_checker        
     def pull_inventory_data(self):
         "pulls LATEST comprehensive inventory data from the new 'fba inventory' report to show stats for the latest date in the report or request"
         if self.local_data:
@@ -167,7 +175,6 @@ class Dataset:
         else:
             result = pd.DataFrame()
             for marketplace in self.market_list:
-                print(marketplace)
                 query = f'''SELECT DATE(snapshot_date) AS date, sku, asin, available,
                             units_shipped_t7, units_shipped_t30, units_shipped_t60, units_shipped_t90,
                             your_price, sales_price, sell_through, item_volume, storage_type, storage_volume, sales_rank, days_of_supply,
@@ -197,7 +204,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'inventory.csv'), index=False)
         self.inventory = result
-
+    @error_checker
     def pull_inventory_history(self):
         "pulls inventory history (available) from the new 'fba inventory' report for the given period to identify isr"
         if self.local_data:
@@ -213,7 +220,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'inventory_history.csv'), index=False)
         self.inventory_history = result
-
+    @error_checker
     def pull_dictionary(self): # TODO add conditional to download different self.markets' dictionaries
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'dictionary.csv'))
@@ -236,7 +243,7 @@ class Dataset:
                 result.to_csv(os.path.join(user_folder, 'dictionary.csv'), index=False)
         self.dictionary = result
         self.dictionary.columns = [x.strip().lower() for x in self.dictionary.columns]
-
+    @error_checker
     def pull_advertised_product_data(self):
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'advertised_product.csv'))
@@ -254,7 +261,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'advertised_product.csv'), index=False)
         self.advertised_product = result
-
+    @error_checker
     def pull_purchased_product_data(self):
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'purchased_product.csv'))
@@ -271,7 +278,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'purchased_product.csv'), index=False)
         self.purchased_product = result
-
+    @error_checker
     def pull_attribution_data(self): # NOT product specific
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'attribution.csv'))
@@ -288,7 +295,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'attribution.csv'), index=False)
         self.attribution = result
-
+    @error_checker
     def pull_dsp_data(self): # NOT product specific
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'dsp.csv'))
@@ -307,7 +314,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'dsp.csv'), index=False)
         self.dsp = result
-
+    @error_checker
     def pull_sba_data(self): # NOT product specific
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'sba.csv'))
@@ -325,7 +332,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'sba.csv'), index=False)
         self.sba = result
-
+    @error_checker
     def pull_sbv_data(self): # NOT product specific
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'sbv.csv'))
@@ -344,7 +351,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'sbv.csv'), index=False)
         self.sbv = result
-
+    @error_checker
     def pull_sd_data(self): # NOT product specific
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'sd.csv'))
@@ -362,7 +369,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'sd.csv'), index=False)
         self.sd = result
-
+    @error_checker
     def pull_fba_shipments_data(self):
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'fba_shipments.csv'))
@@ -380,7 +387,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'fba_shipments.csv'), index=False)
         self.fba_shipments = result
-
+    @error_checker
     def pull_promotions(self):
         "generates promotions data from the 'shipment_item_id' list obtained from fba_shipments report"
         if self.local_data:
@@ -413,7 +420,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'promotions.csv'), index=False)
         self.promotions = result
-
+    @error_checker
     def pull_returns(self):
         "generates returns data from the 'amazon_order_is' list obtained from orders report"
         if self.local_data:
@@ -436,7 +443,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'returns.csv'), index=False)
         self.returns = result
-
+    @error_checker
     def pull_fees_dimensions(self):
         if self.local_data:
             fees = self.__read_local__(os.path.join(user_folder, 'fees.csv'))
@@ -445,7 +452,7 @@ class Dataset:
             if self.save:
                 fees.to_csv(os.path.join(user_folder, 'fees.csv'), index=False)
         self.fees = fees
-
+    @error_checker
     def pull_warehouse(self):
         "pulls data from sellercloud, aggregating inventory stock at warehouse"
         if self.local_data:
@@ -484,10 +491,11 @@ class Dataset:
                 warehouse.to_csv(os.path.join(user_folder, 'warehouse.csv'), index=False)
         self.warehouse = warehouse
         # self.warehouse = result
-
+    @error_checker
     def pull_changelog(self): # TODO add conditional to download sku_changelogs for different markets
         changelog_markets = [x for x in self.market_list if x not in ("GB","MX")]
         tables = {x:f'sku_changelog_{x.lower()}' if x != "US" else 'sku_changelog' for x in changelog_markets}
+        tables.pop('EU', None)
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'changelog.csv'))
         else:
@@ -503,7 +511,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'changelog.csv'), index=False)
         self.changelog = result
-
+    @error_checker
     def pull_incoming(self):
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'incoming.csv'))
@@ -534,7 +542,7 @@ class Dataset:
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'incoming.csv'), index=False)
         self.incoming = result
-            
+    @error_checker           
     def pull_pricing(self):
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'pricing.csv'))
@@ -545,7 +553,7 @@ class Dataset:
                 result.to_csv(os.path.join(user_folder, 'pricing.csv'), index=False)
         self.pricing = result
         self.pricing.columns = [x.strip().lower() for x in self.pricing.columns]
-
+    @error_checker
     def pull_cogs(self):
         "pulls data from product cost report"
         if self.local_data:
