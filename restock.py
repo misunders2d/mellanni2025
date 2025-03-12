@@ -366,7 +366,7 @@ def get_event_sales():
     all_files = []
 
     def process_sku(sku):
-        print(f"\r{' '*150}\rWorking on {sku}, {len(all_files)} out of {len(skus)}", end='', flush=True)
+        print(f"\r{' '*150}\r{len(all_files)} out of {len(skus)} processed, working on {sku}", end='', flush=True)
         sku_event_sales = event_sales[event_sales['sku'] == sku]
         sku_non_event_sales = non_event_sales[non_event_sales['sku'] == sku]
         
@@ -376,7 +376,7 @@ def get_event_sales():
             the_event_sales = sku_event_sales[sku_event_sales['date'].between(min(dates), max(dates), inclusive='both')]
             sku_file[f'pre-{event} average sales'] = pre_event_sales['unitsOrdered'].mean()
             sku_file[f'{event} units sold'] = the_event_sales['unitsOrdered'].sum()
-            sku_file[f'{event} duration, days'] = len(the_event_sales['unitsOrdered'])
+            sku_file[f'{event} duration, days'] = len(dates)
             sku_file[f'{event} average sales'] = sku_file[f'{event} units sold'] /  sku_file[f'{event} duration, days']
             sku_file[f'{event} X increase'] = sku_file[f'{event} average sales'] / sku_file[f'pre-{event} average sales']
     
