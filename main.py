@@ -37,6 +37,10 @@ class MainApp(ctk.CTk):
         self.title_duplicate_check_button = ctk.CTkButton(self.tools_frame, text='Check duplicates in titles', command=self.call_check_title_duplicates)
         self.title_duplicate_check_button.grid(row=2, column=0, padx=self.xspacing, pady=self.yspacing)
 
+        self.flat_file_transfer_button = ctk.CTkButton(self.tools_frame, text='Transfer to new flat file', command=self.call_flat_file_transfer)
+        self.flat_file_transfer_button.grid(row=3, column=0, padx=self.xspacing, pady=self.yspacing)
+
+        #bottom section
         self.update_button = ctk.CTkButton(self, text='Update', fg_color='gray', command=self.update)
         self.update_button.grid(row=3, column=0, pady=20)
 
@@ -44,6 +48,12 @@ class MainApp(ctk.CTk):
         import subprocess
         subprocess.call(['git','pull'])
         subprocess.call(['pip','install','-r','requirements.txt'])
+    
+    def call_flat_file_transfer(self):
+        from scripts import new_template_transfer
+        self.after(200, self.destroy())
+        new_template_transfer.main()
+
 
     def call_restock(self):
         import restock
