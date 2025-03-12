@@ -363,20 +363,10 @@ class Restock(ctk.CTk):
 
 def get_event_sales():
     """calculates pre-event and event averages for all SKUs since 2022"""
-    dataset = Dataset(start="2022-01-01", end="2025-12-31", market="US", local_data=False, save=False)
-    dataset.pull_br_data()
-    sales = dataset.br.copy()
+    all_files = []
 
-    sales = sales[['date','sku','unitsOrdered']]
-    sales['date'] = pd.to_datetime(sales['date']).dt.date
-    sales = sales.sort_values(['date','sku'])
-    sales = sales[~sales['sku'].str.lower().str.contains('.missing|.found')]
-    non_event_sales = sales[~sales['date'].isin([d for value in event_dates.values() for d in value])]
-    event_sales = sales[sales['date'].isin([d for value in event_dates.values() for d in value])]
-
-    result = pd.DataFrame()
-    skus = sales['sku'].unique().tolist()
-    for sku in skus:
+    def process_sku(sku):
+        print(f"\r{' '*150}\rWorking on {sku}, {len(all_files)} out of {len(skus)}", end='', flush=True)
         sku_event_sales = event_sales[event_sales['sku'] == sku]
         sku_non_event_sales = non_event_sales[non_event_sales['sku'] == sku]
         
@@ -390,9 +380,29 @@ def get_event_sales():
             sku_file[f'{event} average sales'] = sku_file[f'{event} units sold'] /  sku_file[f'{event} duration, days']
             sku_file[f'{event} X increase'] = sku_file[f'{event} average sales'] / sku_file[f'pre-{event} average sales']
     
-        result = pd.concat([result, sku_file])
-    
-    result.to_excel(os.path.join(user_folder, 'event_sales.xlsx'), index=False)    
+        # result = pd.concat([result, sku_file])
+        all_files.append(sku_file)
+
+    dataset = Dataset(start="2022-01-01", end="2025-12-31", market="US", local_data=False, save=False)
+    dataset.pull_br_data()
+    sales = dataset.br.copy()
+
+    sales = sales[['date','sku','unitsOrdered']]
+    sales['date'] = pd.to_datetime(sales['date']).dt.date
+    sales = sales.sort_values(['date','sku'])
+    sales = sales[~sales['sku'].str.lower().str.contains('.missing|.found')]
+    non_event_sales = sales[~sales['date'].isin([d for value in event_dates.values() for d in value])]
+    event_sales = sales[sales['date'].isin([d for value in event_dates.values() for d in value])]
+
+    skus = sales['sku'].unique().tolist()
+
+    with ThreadPoolExecutor() as pool:
+        pool.map(process_sku, skus)
+
+    print(f'\n{len(all_files)} processed')
+    result = pd.concat(all_files)
+
+    result.to_excel(os.path.join(user_folder, 'event_sales_test.xlsx'), index=False)    
 
 def main():
     app = Restock()
