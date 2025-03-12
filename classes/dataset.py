@@ -580,20 +580,13 @@ class Dataset:
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'cogs.csv'))
         else:
-            channels = list(set([channels_mapping[x] for x in self.market_list]))
-            result = pd.DataFrame()
-            for channel in channels:
-                query = f"""
-                        SELECT sku, pc_value_usd as product_cost, pc_value_local as product_cost_local, start_date as date, channel
-                        FROM `ds_for_bi.product_cost_hist`
-                        WHERE DATE(start_date) = (
-                            SELECT MAX(DATE(start_date)) FROM `ds_for_bi.product_cost_hist` WHERE DATE(start_date)<=DATE("{self.end}") AND (LOWER(channel) = "{channel}")
-                        )
-                        AND (LOWER(channel) = "{channel}")
-                        """
-                temp_result:pd.DataFrame = self.client.query(query).to_dataframe()
-                if len(temp_result)>0:
-                    result = pd.concat([result, temp_result])
+            query = f"""
+                    SELECT sku, pc_value_usd as product_cost, pc_value_local as product_cost_local, start_date as date, channel
+                    FROM `ds_for_bi.product_cost_hist`
+                    WHERE (DATE(start_date) BETWEEN DATE("{self.start}") AND DATE("{self.end}"))
+                    AND (LOWER(channel) IN ("{self.channel}"))
+                    """
+            result:pd.DataFrame = self.client.query(query).to_dataframe()
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'cogs.csv'), index=False)
         self.cogs = result
