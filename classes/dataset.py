@@ -36,6 +36,7 @@ channels_mapping = {
     "DE":"amazon.de",
     "IT":"amazon.it",
     "ES":"amazon.es",
+    "EU":"amazon.eu"
 }
 
 class Dataset:
@@ -56,7 +57,7 @@ class Dataset:
                 self.market_list = [market]
         elif isinstance(market, list):
             if any(("GB" in market, "UK" in market)):
-                market.extend(['GB','UK'])
+                market.extend(['GB','UK','EU'])
                 market = list(set(market))
             self.channel = '","'.join([channels_mapping[key] for key in market])
             self.market = '","'.join(market)
@@ -166,6 +167,7 @@ class Dataset:
         else:
             result = pd.DataFrame()
             for marketplace in self.market_list:
+                print(marketplace)
                 query = f'''SELECT DATE(snapshot_date) AS date, sku, asin, available,
                             units_shipped_t7, units_shipped_t30, units_shipped_t60, units_shipped_t90,
                             your_price, sales_price, sell_through, item_volume, storage_type, storage_volume, sales_rank, days_of_supply,
@@ -184,9 +186,9 @@ class Dataset:
                             Reserved_Customer_Order, total_days_of_supply_with_open_shipments, marketplace
                             FROM `reports.fba_inventory_planning`
                             WHERE DATE(snapshot_date) = LEAST(
-                                (SELECT MAX(DATE(snapshot_date)) FROM `reports.fba_inventory_planning` WHERE marketplace IN ("{marketplace}")),DATE("{self.end}")
+                                (SELECT MAX(DATE(snapshot_date)) FROM `reports.fba_inventory_planning` WHERE marketplace = UPPER("{marketplace}")),DATE("{self.end}")
                             )
-                            AND marketplace IN ("{marketplace}")
+                            AND marketplace = UPPER("{marketplace}")
                             AND LOWER(condition) != "used"
                             '''
                 temp_result:pd.DataFrame = self.client.query(query).to_dataframe()
@@ -549,15 +551,20 @@ class Dataset:
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'cogs.csv'))
         else:
-            query = f"""
-                    SELECT sku, pc_value_usd as product_cost, pc_value_local as product_cost_local, start_date as date, channel
-                    FROM `ds_for_bi.product_cost_hist`
-                    WHERE DATE(start_date) = (
-                        SELECT MAX(DATE(start_date)) FROM `ds_for_bi.product_cost_hist` WHERE DATE(start_date)<=DATE("{self.end}")
-                    )
-                    AND (LOWER(channel) IN ("{self.channel}"))
-                    """
-            result:pd.DataFrame = self.client.query(query).to_dataframe()
+            channels = list(set([channels_mapping[x] for x in self.market_list]))
+            result = pd.DataFrame()
+            for channel in channels:
+                query = f"""
+                        SELECT sku, pc_value_usd as product_cost, pc_value_local as product_cost_local, start_date as date, channel
+                        FROM `ds_for_bi.product_cost_hist`
+                        WHERE DATE(start_date) = (
+                            SELECT MAX(DATE(start_date)) FROM `ds_for_bi.product_cost_hist` WHERE DATE(start_date)<=DATE("{self.end}") AND (LOWER(channel) = "{channel}")
+                        )
+                        AND (LOWER(channel) = "{channel}")
+                        """
+                temp_result:pd.DataFrame = self.client.query(query).to_dataframe()
+                if len(temp_result)>0:
+                    result = pd.concat([result, temp_result])
             if self.save:
                 result.to_csv(os.path.join(user_folder, 'cogs.csv'), index=False)
         self.cogs = result
