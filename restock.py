@@ -391,6 +391,7 @@ def get_event_sales():
     sales['date'] = pd.to_datetime(sales['date']).dt.date
     sales = sales.sort_values(['date','sku'])
     sales = sales[~sales['sku'].str.lower().str.contains('.missing|.found')]
+    sales = sales.groupby(['date','sku']).agg('sum').reset_index()
     non_event_sales = sales[~sales['date'].isin([d for value in event_dates.values() for d in value])]
     event_sales = sales[sales['date'].isin([d for value in event_dates.values() for d in value])]
 
