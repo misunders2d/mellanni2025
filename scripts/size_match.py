@@ -50,6 +50,8 @@ def get_dictionary(folder_id='1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4',filename='Dicti
     file.columns = [x.lower() for x in file.columns]
     file = file[~file['collection'].isin(excluded_collections)]
     file = file.drop_duplicates('sku')
+    file['country_code'] = 'US'
+    file['sales_channel'] = 'Amazon.com'
     return file
 
 def combine_files(dimensions, dictionary):
@@ -59,7 +61,7 @@ def combine_files(dimensions, dictionary):
     for c in ['collection','sub-collection']:
         del dictionary[c]
     dictionary = dictionary.rename(columns = {'size map':'size','c':'collection'})
-    dictionary = dictionary[['sku', 'asin', 'collection', 'size', 'color', 'actuality']] 
+    dictionary = dictionary[['sku', 'asin', 'collection', 'size', 'color', 'actuality','sales_channel']] 
     result = pd.merge(dictionary, dimensions, how = 'right', on = ['collection','size'])
     return result
 

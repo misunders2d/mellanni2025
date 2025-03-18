@@ -6,6 +6,7 @@ import pandas_gbq
 import os
 from typing import Literal, List
 from utils import mellanni_modules as mm
+from utils.decorators import error_checker
 
 from scripts import size_match
 
@@ -26,40 +27,40 @@ default_market_list = ["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES"]
 CHANNEL = None
 LOCAL = True
 SAVE = False
-channels_mapping = {
-    "US":"amazon.com",
-    "CA":"amazon.ca",
-    "GB":"amazon.co.uk",
-    "UK":"amazon.co.uk",
-    "MX":"amazon.com.mx",
-    "FR":"amazon.fr",
-    "DE":"amazon.de",
-    "IT":"amazon.it",
-    "ES":"amazon.es",
-    "EU":"amazon.eu"
-}
 
 class Dataset:
+    channels_mapping = {
+        "US":"amazon.com",
+        "CA":"amazon.ca",
+        "GB":"amazon.co.uk",
+        "UK":"amazon.co.uk",
+        "MX":"amazon.com.mx",
+        "FR":"amazon.fr",
+        "DE":"amazon.de",
+        "IT":"amazon.it",
+        "ES":"amazon.es",
+        "EU":"amazon.eu"
+    }
     def __init__(self, start: str = START, end: str = END,
-                 market: Literal["US", "CA", "GB", "UK" "MX", "FR", "DE", "IT", "ES", "*"] | List[str] = MARKET,
+                 market: Literal["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES", "*"] | List[str] = MARKET,
                  local_data: bool = LOCAL, save: bool = SAVE):
         self.client = gc.gcloud_connect()
         self.start = start
         self.end = end
         if isinstance(market, str):
             if market == '*':
-                self.channel = '","'.join([value for value in channels_mapping.values()])
+                self.channel = '","'.join([value for value in Dataset.channels_mapping.values()])
                 self.market = '","'.join(default_market_list)
                 self.market_list = default_market_list
             else:
-                self.channel = channels_mapping[market.upper()]
+                self.channel = Dataset.channels_mapping[market.upper()]
                 self.market = market.upper() if market.upper() not in ("GB", "UK") else '","'.join(("GB","UK"))
                 self.market_list = [market]
         elif isinstance(market, list):
             if any(("GB" in market, "UK" in market)):
                 market.extend(['GB','UK','EU'])
                 market = list(set(market))
-            self.channel = '","'.join([channels_mapping[key] for key in market])
+            self.channel = '","'.join([Dataset.channels_mapping[key] for key in market])
             self.market = '","'.join(market)
             self.market_list = market
         self.local_data = local_data
@@ -85,15 +86,6 @@ class Dataset:
             PopupError(f"{e} error")
             raise BaseException(f"Could not read from {file}")
         return result
-
-    def error_checker(func):
-        def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except Exception as e:
-                error_str = f'function {func} returned an error:\n{e}'
-                PopupError(message=error_str)
-        return wrapper
 
     @error_checker
     def pull_br_asin_data(self):
@@ -158,7 +150,8 @@ class Dataset:
                     DATETIME(purchase_date, "America/Los_Angeles") as pacific_datetime,
                     DATE(purchase_date, "America/Los_Angeles") as pacific_date,
                     amazon_order_id,
-                    sku,asin,quantity as units_sold,currency, item_price as sales, is_business_order,
+                    sku,asin,quantity as units_sold,currency, item_price as sales,
+                    item_promotion_discount as promo_discount, is_business_order,
                     ship_city, ship_state, ship_postal_code, ship_country, sales_channel
                     FROM `reports.all_orders`
                     WHERE (DATE(DATETIME(purchase_date, "America/Los_Angeles")) BETWEEN DATE("{self.start}") AND DATE("{self.end}"))
@@ -215,7 +208,16 @@ class Dataset:
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'inventory_history.csv'))
         else:
-            query = f'''SELECT DATE(snapshot_date) AS date, sku, asin, available, Inventory_Supply_at_FBA, marketplace
+            query = f'''SELECT DATE(snapshot_date) AS date, sku, asin, available,
+                        estimated_storage_cost_next_month,
+                        estimated_ais_181_210_days,
+                        estimated_ais_211_240_days,
+                        estimated_ais_241_270_days,
+                        estimated_ais_271_300_days,
+                        estimated_ais_301_330_days,
+                        estimated_ais_331_365_days,
+                        estimated_ais_365_plus_days,                        
+                        Inventory_Supply_at_FBA, marketplace
                         FROM `reports.fba_inventory_planning`
                         WHERE DATE(snapshot_date) BETWEEN DATE("{self.start}") AND DATE("{self.end}")
                         AND marketplace IN ("{self.market}")
@@ -241,7 +243,6 @@ class Dataset:
             for market, (folder_id, file_name) in dict_ids.items():
                 dictionary_id = gd.find_file_id(folder_id=folder_id, filename=file_name, drive_id='0AMdx9NlXacARUk9PVA')
                 temp:pd.DataFrame = pd.read_excel(gd.download_file(file_id=dictionary_id))
-                temp['marketplace'] = market
                 result = pd.concat([result, temp])
             
             result = result.dropna(subset='Collection')

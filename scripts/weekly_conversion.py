@@ -81,6 +81,7 @@ def clean_changes(changes:pd.DataFrame, dictionary:pd.DataFrame) -> pd.DataFrame
     df = pd.merge(changes, dictionary, how='left', on='sku')
     if len(df) == 0:
         return df
+    df.loc[df['change_type']=='Other, please specify in notes', 'change_type']=df['notes']
     changes_refined = df.pivot_table(
         values='change_type',
         index=['year','week','collection', 'sub_collection'],

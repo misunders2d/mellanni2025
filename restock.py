@@ -23,7 +23,7 @@ start_date = "2025-01-01"
 end_date = "2025-12-31"
 default_market_list = ["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES"]
 
-class Restock(ctk.CTk):
+class App(ctk.CTk):
     def __init__(self, width=1080, height=720):
         super().__init__()
         self.title('Restock')
@@ -211,9 +211,10 @@ class Restock(ctk.CTk):
                     ]['asin'].unique().tolist()
             elif selected_asins:
                 asins = selected_asins
-            product = Product(asin=asins, dataset=self.dataset)
+            product = Product(asin=asins, dataset=self.dataset, start=date_from, end=date_to)
             product.populate_loop()
-            product.calculate_loop(start=date_from, end=date_to)
+            product.save_to_file()
+            product.calculate_loop()
             product.export()
             self.progress.stop()
             self.status_label.configure(text=f'Done, exported data for {len(asins)} items')
@@ -406,7 +407,7 @@ def get_event_sales():
     result.to_excel(os.path.join(user_folder, 'event_sales_test.xlsx'), index=False)    
 
 def main():
-    app = Restock()
+    app = App()
     app.mainloop()
 
 if __name__ == "__main__":
