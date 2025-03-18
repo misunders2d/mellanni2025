@@ -503,8 +503,9 @@ class Product:
         sales = sales.rename(columns = {'pacific_date':'date'})
         sales['date'] = pd.to_datetime(sales['date'])
         sales = sales[sales['date'].dt.date.between(self.start, self.end)]
-        sales['net_sales'] = sales['sales'] - sales['promo_discount']
-        sales['referral_fee'] = sales['net_sales'] * 0.15
+        sales['promo_discount'] = -sales['promo_discount']
+        sales['net_sales'] = sales['sales'] + sales['promo_discount']
+        sales['referral_fee'] = -sales['net_sales'] * 0.15
         
         sales = self.__attach_marketplace__(sales, 'sales_channel')
         sales = self.__attach_collection__(sales)
@@ -524,8 +525,8 @@ class Product:
             ['date', 'sku','collection', 'sub-collection', 'size',
             'color','marketplace']
             ).agg('sum').reset_index()
-        storage['storage'] = storage['estimated_storage_cost_next_month'] / 30
-        storage['excess_storage'] = storage[
+        storage['storage'] = -storage['estimated_storage_cost_next_month'] / 30
+        storage['excess_storage'] = -storage[
             ['estimated_ais_181_210_days',
             'estimated_ais_211_240_days', 'estimated_ais_241_270_days',
             'estimated_ais_271_300_days', 'estimated_ais_301_330_days',
@@ -543,6 +544,7 @@ class Product:
         cogs['year-month'] = cogs['date'].dt.year.astype('str') + '-' + cogs['date'].dt.month.astype('str')
         
         sales['year-month'] = sales['date'].dt.year.astype('str') + '-' + sales['date'].dt.month.astype('str')
+        cogs['product_cost'] = -cogs['product_cost']
         cogs = self.__attach_marketplace__(cogs, 'channel')
         cogs = self.__attach_collection__(cogs)
 
@@ -569,7 +571,7 @@ class Product:
             on=['marketplace', 'collection','sub-collection', 'size', 'color']
             )
         
-        sales['fba_fee'] = sales['fba_fee'] * sales['units_sold']
+        sales['fba_fee'] = -sales['fba_fee'] * sales['units_sold']
         
         ad_spend = self.advertised_product_df.groupby(
             ['date','sku','asin','country_code']
@@ -581,6 +583,7 @@ class Product:
         del ad_spend['asin']
         ad_spend = ad_spend.groupby(['date', 'sku', 'marketplace', 'spend', 'collection',
                'sub-collection', 'size', 'color']).agg('sum').reset_index()
+        ad_spend['spend'] = -ad_spend['spend']
         
         sales = pd.merge(
             sales,
@@ -597,10 +600,11 @@ class Product:
             how='outer', on=['date', 'sku','collection', 'sub-collection', 'size',
             'color','marketplace'])
         
+        del sales['year-month']
         sales = sales.fillna(0)
         sales['marketplace'] = sales['marketplace'].replace('UK','GB')
         
-        sales['profit w/o overhead'] = sales['net_sales']-sales['referral_fee']-sales['fba_fee']-sales['product_cost']-sales['spend']-sales['storage']
+        sales['profit w/o overhead'] = sales[['sales','promo_discount','referral_fee','fba_fee','product_cost','spend','storage']].sum(axis=1)
         self.sales_summary = sales.copy()
     
 # dataset = Dataset(
