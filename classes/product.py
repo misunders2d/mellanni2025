@@ -603,15 +603,15 @@ class Product:
         sales['profit w/o overhead'] = sales['net_sales']-sales['referral_fee']-sales['fba_fee']-sales['product_cost']-sales['spend']-sales['storage']
         self.sales_summary = sales.copy()
     
-dataset = Dataset(
-    start="2025-01-01", end="2025-12-31",
-    market=["US", "CA", "GB", "UK","MX", "FR", "DE", "IT", "ES"],
-    local_data=True,save=False)
-dataset.query_sync()
+# dataset = Dataset(
+#     start="2025-01-01", end="2025-12-31",
+#     market=["US", "CA", "GB", "UK","MX", "FR", "DE", "IT", "ES"],
+#     local_data=True,save=False)
+# dataset.query_sync()
 
-skus = dataset.dictionary[dataset.dictionary['collection']=='Microfiber Pillow Covers w/zipper']['sku'].unique().tolist()
+# skus = dataset.dictionary[dataset.dictionary['collection']=='Microfiber Pillow Covers w/zipper']['sku'].unique().tolist()
 
-product = Product(dataset=dataset, sku=skus, start="2025-02-28", end="2025-12-31")
-product.populate_loop()    
+# product = Product(dataset=dataset, sku=skus, start="2025-02-28", end="2025-12-31")
+# product.populate_loop()    
     
-self = product
+# self = product
