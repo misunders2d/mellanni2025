@@ -8,7 +8,6 @@ from common import user_folder
 import os, pickle
 import asyncio
 from numpy import nan
-import pandas as pd
 
 class Product:
     dataset = None
@@ -468,25 +467,26 @@ class Product:
         file_path_stats = os.path.join(user_folder, 'product_stats.xlsx')
         file_path_details = os.path.join(user_folder, 'product_details.xlsx')
         file_summary_path = os.path.join(user_folder, 'product_summary.xlsx')
-        with pd.ExcelWriter(file_path_stats, engine='xlsxwriter') as writer:
-            for key, df in self.stats.items():
-                df.to_excel(writer, sheet_name=key, index=False)
-                mm.format_header(df, writer, key)
+        if self.stats:
+            with pd.ExcelWriter(file_path_stats, engine='xlsxwriter') as writer:
+                for key, df in self.stats.items():
+                    df.to_excel(writer, sheet_name=key, index=False)
+                    mm.format_header(df, writer, key)
 
-            for key, df in {'fees':self.fees_dimensions_df, 'prices':self.pricing_df, 'cogs':self.cogs_df}.items():
-                df.to_excel(writer, sheet_name=key, index = False)
-                mm.format_header(df, writer, key)
+                for key, df in {'fees':self.fees_dimensions_df, 'prices':self.pricing_df, 'cogs':self.cogs_df}.items():
+                    df.to_excel(writer, sheet_name=key, index = False)
+                    mm.format_header(df, writer, key)
 
-        with pd.ExcelWriter(file_path_details, engine='xlsxwriter') as writer:
-            for key, df in self.combined_dfs.items():
-                df.to_excel(writer, sheet_name=key, index=False)
-                mm.format_header(df, writer, key)
-        
-        if 'sales_summary' not in self.__dict__:
-            self.summarize()
-        with pd.ExcelWriter(file_summary_path, engine='xlsxwriter') as writer:
-            self.sales_summary.to_excel(writer, sheet_name='sales_summary', index=False)
-            mm.format_header(self.sales_summary, writer, 'sales_summary')
+        if self.combined_dfs:
+            with pd.ExcelWriter(file_path_details, engine='xlsxwriter') as writer:
+                for key, df in self.combined_dfs.items():
+                    df.to_excel(writer, sheet_name=key, index=False)
+                    mm.format_header(df, writer, key)
+            
+        if 'sales_summary' in self.__dict__:
+            with pd.ExcelWriter(file_summary_path, engine='xlsxwriter') as writer:
+                self.sales_summary.to_excel(writer, sheet_name='sales_summary', index=False)
+                mm.format_header(self.sales_summary, writer, 'sales_summary')
         mm.open_file_folder(os.path.dirname(file_path_stats))
 
     # summary and restock section
@@ -496,126 +496,277 @@ class Product:
     @error_checker
     def summarize(self):
         #storage, fba fee, referral fee, ad spend, cogs
-        #calculate units ordered daily and referral fee
-        sales = self.orders_df.groupby(['pacific_date','sku','asin','sales_channel'])[
-            ['units_sold', 'sales', 'promo_discount']
-            ].agg('sum').reset_index()
-        sales = sales.rename(columns = {'pacific_date':'date'})
-        sales['date'] = pd.to_datetime(sales['date'])
-        sales = sales[sales['date'].dt.date.between(self.start, self.end)]
-        sales['promo_discount'] = -sales['promo_discount']
-        sales['net_sales'] = sales['sales'] + sales['promo_discount']
-        sales['referral_fee'] = -sales['net_sales'] * 0.15
+        def __summarize_sales__():
+            sales = self.orders_df.groupby(['pacific_date','sku','asin','sales_channel'])[
+                ['units_sold', 'sales', 'promo_discount']
+                ].agg('sum').reset_index()
+            sales = sales.rename(columns = {'pacific_date':'date'})
+            sales['date'] = pd.to_datetime(sales['date'])
+            sales = sales[sales['date'].dt.date.between(self.start, self.end)]
+            sales['promo_discount'] = -sales['promo_discount']
+            sales['referral_fee'] = -(sales['sales'] + sales['promo_discount']) * 0.15
+            
+            sales = self.__attach_marketplace__(sales, 'sales_channel')
+            sales = self.__attach_collection__(sales)
+            sales['marketplace'] = sales['marketplace'].replace('UK','GB')
+            
+            sales = sales.groupby(
+                ['date','sku','marketplace','collection', 'sub-collection', 'size','color']
+                )[['units_sold', 'sales','referral_fee','promo_discount']].agg('sum').reset_index()
+            return sales
         
-        sales = self.__attach_marketplace__(sales, 'sales_channel')
-        sales = self.__attach_collection__(sales)
-        sales = sales.groupby(
-            ['date','sku','marketplace','collection', 'sub-collection', 'size','color']
-            )[['units_sold', 'sales','net_sales','referral_fee','promo_discount']].agg('sum').reset_index()
-       
-        #storage fees
-        storage = self.inventory_history_df.groupby(
-            ['date', 'sku','asin','marketplace']
-            ).agg('sum').reset_index()
-        storage = self.__attach_collection__(storage)
-        storage['date'] = pd.to_datetime(storage['date'])
-        storage = storage[storage['date'].dt.date.between(self.start, self.end)]
-        del storage['asin']
-        storage = storage.groupby(
-            ['date', 'sku','collection', 'sub-collection', 'size',
-            'color','marketplace']
-            ).agg('sum').reset_index()
-        storage['storage'] = -storage['estimated_storage_cost_next_month'] / 30
-        storage['excess_storage'] = -storage[
-            ['estimated_ais_181_210_days',
-            'estimated_ais_211_240_days', 'estimated_ais_241_270_days',
-            'estimated_ais_271_300_days', 'estimated_ais_301_330_days',
-            'estimated_ais_331_365_days', 'estimated_ais_365_plus_days']
-            ].sum(axis=1) / 30
-        storage = storage[
-            ['date', 'sku','collection', 'sub-collection', 'size',
-            'color', 'marketplace', 'storage','excess_storage']
-            ]
-        
-        cogs = self.cogs_df.copy()
-        cogs['date'] = pd.to_datetime(cogs['date'])
-        cogs = cogs[cogs['date'].dt.date.between(self.start-pd.Timedelta(days=30), self.end)]
-
-        cogs['year-month'] = cogs['date'].dt.year.astype('str') + '-' + cogs['date'].dt.month.astype('str')
-        
-        sales['year-month'] = sales['date'].dt.year.astype('str') + '-' + sales['date'].dt.month.astype('str')
-        cogs['product_cost'] = -cogs['product_cost']
-        cogs = self.__attach_marketplace__(cogs, 'channel')
-        cogs = self.__attach_collection__(cogs)
-
-        sales = pd.merge(
-            sales,
-            cogs[
-                ['year-month', 'marketplace', 'collection', 'sub-collection',
-                 'size','color','product_cost']
-                ],
-            how='left',
-            on=['year-month','marketplace','collection', 'sub-collection', 'size','color']
-            )
-        sales['product_cost'] = sales['product_cost'] * sales['units_sold']
-        
-        fees = self.fees_dimensions_df[['sku','fba_fee','sales_channel']].copy()
-        fees = self.__attach_marketplace__(fees, 'sales_channel')
-        fees = self.__attach_collection__(fees)
-        
-        sales = pd.merge(
-            sales,
-            fees[['fba_fee', 'marketplace', 'collection',
-                   'sub-collection', 'size', 'color']],
-            how='left',
-            on=['marketplace', 'collection','sub-collection', 'size', 'color']
-            )
-        
-        sales['fba_fee'] = -sales['fba_fee'] * sales['units_sold']
-        
-        ad_spend = self.advertised_product_df.groupby(
-            ['date','sku','asin','country_code']
-            )['spend'].agg('sum').reset_index()
-        ad_spend['date'] = pd.to_datetime(ad_spend['date'])
-        ad_spend = ad_spend[ad_spend['date'].dt.date.between(self.start, self.end)]
-        ad_spend = ad_spend.rename(columns={'country_code':'marketplace'})
-        ad_spend = self.__attach_collection__(ad_spend)
-        del ad_spend['asin']
-        ad_spend = ad_spend.groupby(['date', 'sku', 'marketplace', 'spend', 'collection',
-               'sub-collection', 'size', 'color']).agg('sum').reset_index()
-        ad_spend['spend'] = -ad_spend['spend']
-        
-        sales = pd.merge(
-            sales,
-            ad_spend[['date','sku','collection','sub-collection', 'size',
-            'color','spend','marketplace']],
-            how='outer',
-            on=['date','marketplace','sku','collection','sub-collection', 'size',
-            'color']
-            )
-
-        sales = pd.merge(
-            sales,
-            storage,
-            how='outer', on=['date', 'sku','collection', 'sub-collection', 'size',
-            'color','marketplace'])
-        
-        del sales['year-month']
-        sales = sales.fillna(0)
-        sales['marketplace'] = sales['marketplace'].replace('UK','GB')
-        
-        sales['profit w/o overhead'] = sales[['sales','promo_discount','referral_fee','fba_fee','product_cost','spend','storage']].sum(axis=1)
-        self.sales_summary = sales.copy()
+        def __summarize_storage_fees__():
+            storage = self.inventory_history_df.groupby(
+                ['date', 'sku','asin','marketplace']
+                ).agg('sum').reset_index()
+            storage['marketplace'] = storage['marketplace'].replace('UK','GB')
+            storage = self.__attach_collection__(storage)
+            storage['date'] = pd.to_datetime(storage['date'])
+            storage = storage[storage['date'].dt.date.between(self.start, self.end)]
+            del storage['asin']
     
+            storage = storage.groupby(
+                ['date', 'sku','collection', 'sub-collection', 'size',
+                'color','marketplace']
+                ).agg('sum').reset_index()
+            storage['storage'] = -storage['estimated_storage_cost_next_month'] / 30
+            storage['excess_storage'] = -storage[
+                ['estimated_ais_181_210_days',
+                'estimated_ais_211_240_days', 'estimated_ais_241_270_days',
+                'estimated_ais_271_300_days', 'estimated_ais_301_330_days',
+                'estimated_ais_331_365_days', 'estimated_ais_365_plus_days']
+                ].sum(axis=1) / 30
+            storage = storage[
+                ['date', 'sku','collection', 'sub-collection', 'size',
+                'color', 'marketplace', 'storage','excess_storage']
+                ]
+            return storage
+        
+        def __summarize_cogs__():
+            cogs = self.cogs_df.copy()
+            cogs['date'] = pd.to_datetime(cogs['date'])
+            cogs = cogs[cogs['date'].dt.date.between(self.start-pd.Timedelta(days=30), self.end)]
+    
+            cogs['year-month'] = cogs['date'].dt.year.astype('str') + '-' + cogs['date'].dt.month.astype('str')
+            
+            sales['year-month'] = sales['date'].dt.year.astype('str') + '-' + sales['date'].dt.month.astype('str')
+            cogs['product_cost'] = -cogs['product_cost']
+            cogs = self.__attach_marketplace__(cogs, 'channel')
+            cogs = self.__attach_collection__(cogs)
+    
+            cogs['marketplace'] = cogs['marketplace'].replace('UK','GB')
+    
+            cogs = cogs.groupby(['sku', 'year-month', 'marketplace', 'collection', 'sub-collection', 'size',
+                   'color'])[['product_cost', 'product_cost_local']].agg('max').reset_index()
+            return cogs
+
+        def __summarize_fees__():
+            fees = self.fees_dimensions_df[['sku','fba_fee','sales_channel']].copy()
+            fees = self.__attach_marketplace__(fees, 'sales_channel')
+            fees = self.__attach_collection__(fees)
+            fees['marketplace'] = fees['marketplace'].replace('UK','GB')
+            
+            fees = fees.groupby(
+                ['marketplace', 'collection','sub-collection', 'size', 'color']
+                )['fba_fee'].agg('max').reset_index()
+            return fees
+
+        def __summarize_ad_spend__():        
+            ad_spend = self.advertised_product_df.groupby(
+                ['date','sku','asin','country_code']
+                )[['spend','sameSkuUnits','sameSkuSales','clicks', 'impressions']].agg('sum').reset_index()
+            ad_spend = ad_spend.rename(columns = {
+                'sameSkuUnits':'unitsSoldOwnPPC',
+                'sameSkuSales':'salesOwnPPC',
+                'country_code':'marketplace'
+                })
+            ad_spend['date'] = pd.to_datetime(ad_spend['date'])
+            ad_spend = ad_spend[ad_spend['date'].dt.date.between(self.start, self.end)]
+            ad_spend = self.__attach_collection__(ad_spend)
+            del ad_spend['asin']
+            ad_spend['marketplace'] = ad_spend['marketplace'].replace('UK','GB')
+            ad_spend = ad_spend.groupby(['date', 'sku', 'marketplace', 'collection',
+                   'sub-collection', 'size', 'color']).agg('sum').reset_index()
+            ad_spend['spend'] = -ad_spend['spend']
+            return ad_spend
+
+        def __summarize_purchased_product__():
+            purchased = self.purchased_product_df.groupby(
+                ['date', 'purchasedAsin','country_code']
+                )[['otherSkuUnits','otherSkuSales']].agg('sum').reset_index()
+            purchased = purchased.rename(columns={
+                'otherSkuUnits':'unitsSoldOtherPPC',
+                'otherSkuSales':'salesOtherPPC',
+                'purchasedAsin':'asin',
+                'country_code':'marketplace'
+                })
+            purchased['date'] = pd.to_datetime(purchased['date'])
+            purchased = purchased[purchased['date'].dt.date.between(self.start, self.end)]
+            purchased = self.__attach_collection__(purchased)
+            purchased['marketplace'] = purchased['marketplace'].replace('UK','GB')
+            purchased = purchased.groupby(['date','marketplace', 'collection',
+                   'sub-collection', 'size', 'color']).agg('sum').reset_index()
+            return purchased
+        
+        def __summarize_br__():
+            br = self.br_asin_df.groupby(
+                ['date', 'asin', 'country_code']
+                )[
+                    ['browserSessions','browserSessionsB2B', 'mobileAppSessions',
+                     'mobileAppSessionsB2B','sessions', 'sessionsB2B',
+                     'browserPageViews', 'browserPageViewsB2B',
+                     'mobileAppPageViews','mobileAppPageViewsB2B',
+                     'pageViews','pageViewsB2B']
+                    ].agg('sum').reset_index()
+            br = br.rename(columns={'country_code':'marketplace'})
+            br['marketplace'] = br['marketplace'].replace('UK','GB')
+            br['date'] = pd.to_datetime(br['date'])
+            br = br[br['date'].dt.date.between(self.start, self.end)]
+            
+            br = self.__attach_collection__(br)
+            br = br.groupby(
+                ['date','marketplace','collection','sub-collection','size','color']
+                ).agg('sum').reset_index()
+            return br
+
+        def __summarize_changelog__():
+            changes = self.changelog_df.copy()
+            changes = changes.rename(columns={'country_code':'marketplace'})
+            changes['marketplace'] = changes['marketplace'].replace('UK','GB')
+            changes['date'] = pd.to_datetime(changes['date'])
+            changes = changes[changes['date'].dt.date.between(self.start, self.end)]
+            
+            changes['change_type'] = changes['change_type'].replace('Other, please specify in notes', nan)
+    
+            changes['changes'] = changes.apply(
+                lambda row: f"{row['change_type']} : {row['notes']}" if pd.notnull(row['change_type']) and pd.notnull(row['notes'])\
+                    else row['change_type'] if pd.notnull(row['change_type'])\
+                        else row['notes'],
+                axis=1)
+            changes = self.__attach_collection__(changes)
+            changes = changes.groupby(
+                ['date','marketplace','collection','sub-collection','size','color']
+                )['changes'].agg(lambda x: ' | '.join(x.unique().tolist())).reset_index()
+            return changes
+            
+
+        def __merge_summary__(sales, cogs, fees, ad_spend, purchased, storage, br, changes):
+            sales = pd.merge(
+                sales,
+                cogs[
+                    ['year-month', 'sku','marketplace', 'collection', 'sub-collection',
+                      'size','color','product_cost']
+                    ],
+                how='left',
+                on=['year-month','sku','marketplace','collection', 'sub-collection', 'size','color'],
+                validate="many_to_one"
+                )
+            sales['product_cost'] = sales['product_cost'] * sales['units_sold']
+            
+            
+            sales = pd.merge(
+                sales,
+                fees[['fba_fee', 'marketplace', 'collection',
+                        'sub-collection', 'size', 'color']],
+                how='left',
+                on=['marketplace', 'collection','sub-collection', 'size', 'color']
+                )
+            
+            sales['fba_fee'] = -sales['fba_fee'] * sales['units_sold']
+            
+            sales = pd.merge(
+                sales,
+                ad_spend[['date','sku','collection','sub-collection', 'size',
+                'color','spend','marketplace','unitsSoldOwnPPC','salesOwnPPC',
+                'clicks','impressions']],
+                how='outer',
+                on=['date','sku','marketplace','collection','sub-collection', 'size',
+                'color'],
+                validate="one_to_one"
+                )
+    
+            sales = pd.merge(
+                sales,
+                storage,
+                how='outer', on=['date', 'sku','collection', 'sub-collection', 'size',
+                'color','marketplace'])
+            sales['marketplace'] = sales['marketplace'].replace('UK','GB')
+            
+            del sales['year-month']
+            
+            skus_group = sales.groupby(
+                ['date', 'marketplace', 'collection', 'sub-collection', 'size','color']
+                )['sku'].agg(lambda x: ', '.join(x.tolist())).reset_index()
+    
+            del sales['sku']
+            sales = sales.groupby(
+                ['date', 'marketplace', 'collection', 'sub-collection', 'size','color']
+                ).agg('sum').reset_index()
+    
+            sales['sku'] = skus_group['sku']
+            
+            sales = pd.merge(
+                sales,
+                purchased[['date','asin','collection','sub-collection', 'size',
+                'color','marketplace','unitsSoldOtherPPC','salesOtherPPC']],
+                how='outer',
+                on=['date','marketplace','collection','sub-collection', 'size',
+                'color'],
+                validate="one_to_one"
+                )
+            
+            sales['sku'] = sales['sku'].fillna(sales['asin'])
+            del sales['asin']
+    
+           
+            sales['profit w/o overhead'] = sales[['sales','promo_discount','referral_fee','fba_fee','product_cost','spend','storage']].sum(axis=1)
+            sales['ad_units'] = sales['unitsSoldOwnPPC'] + sales['unitsSoldOtherPPC']
+            sales['ad_sales'] = sales['salesOwnPPC'] + sales['salesOtherPPC']
+            sales['organic_units'] = sales['units_sold'] - sales['ad_units']
+            sales['organic_sales'] = sales['sales'] - sales['ad_sales']
+            sales = pd.merge(
+                sales,
+                br,
+                how = 'outer',
+                on=['date', 'marketplace', 'collection', 'sub-collection', 'size', 'color'],
+                validate="one_to_one"
+                )
+            sales['sku'] = sales['sku'].fillna(sales['asin'])
+            del sales['asin']
+            sales = sales.fillna(0)
+
+            sales = pd.merge(
+                sales,
+                changes,
+                how='left',
+                on=['date', 'marketplace', 'collection', 'sub-collection', 'size', 'color'],
+                validate='one_to_one'
+                )
+            sales['date'] = sales['date'].dt.date
+            return sales
+        
+        sales = __summarize_sales__()
+        cogs = __summarize_cogs__()
+        fees = __summarize_fees__()
+        ad_spend = __summarize_ad_spend__()
+        purchased = __summarize_purchased_product__()
+        storage = __summarize_storage_fees__()
+        br = __summarize_br__()
+        changes = __summarize_changelog__()
+        
+        self.sales_summary = __merge_summary__(sales, cogs, fees, ad_spend, purchased, storage, br, changes)
+    
+
 # dataset = Dataset(
 #     start="2025-01-01", end="2025-12-31",
 #     market=["US", "CA", "GB", "UK","MX", "FR", "DE", "IT", "ES"],
 #     local_data=True,save=False)
 # dataset.query_sync()
 
-# skus = dataset.dictionary[dataset.dictionary['collection']=='Microfiber Pillow Covers w/zipper']['sku'].unique().tolist()
+# skus = dataset.dictionary['sku'].unique().tolist()
+# # skus = dataset.dictionary[dataset.dictionary['collection']=='Microfiber Pillow Covers w/zipper']['sku'].unique().tolist()
 
-# product = Product(dataset=dataset, sku=skus, start="2025-02-28", end="2025-12-31")
+# product = Product(dataset=dataset, sku=skus, start="2025-02-01", end="2025-12-31")
 # product.populate_loop()    
     
 # self = product

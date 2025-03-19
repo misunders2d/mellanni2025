@@ -213,8 +213,9 @@ class App(ctk.CTk):
                 asins = selected_asins
             product = Product(asin=asins, dataset=self.dataset, start=date_from, end=date_to)
             product.populate_loop()
-            product.save_to_file()
-            product.calculate_loop()
+            # product.save_to_file()
+            # product.calculate_loop()
+            product.summarize()
             product.export()
             self.progress.stop()
             self.status_label.configure(text=f'Done, exported data for {len(asins)} items')
