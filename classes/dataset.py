@@ -8,7 +8,7 @@ from typing import Literal, List
 from utils import mellanni_modules as mm
 from utils.decorators import error_checker
 
-from scripts import size_match
+from utils import size_match
 
 from connectors import gcloud as gc
 from connectors import gdrive as gd

@@ -3,7 +3,7 @@ import customtkinter as ctk
 import tkinter as tk
 from ctk_gui.ctk_windows import PopupGetDate
 from utils.mellanni_modules import user_folder, open_file_folder
-from utils.events import event_dates
+from common.events import event_dates
 from common import excluded_collections
 
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +22,9 @@ method_list = {name:func for name, func in Dataset.__dict__.items() if name.star
 start_date = "2025-01-01"
 end_date = "2025-12-31"
 default_market_list = ["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES"]
+
+ctk.set_appearance_mode('dark')
+ctk.set_default_color_theme('blue')
 
 class App(ctk.CTk):
     def __init__(self, width=1080, height=720):
@@ -272,20 +275,22 @@ class App(ctk.CTk):
 
     def __on_collection_select__(self, *args):
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
-        potential_sizes = self.dataset.dictionary[self.dataset.dictionary['collection'].isin(selected_collections)]['size'].unique().tolist()
-        self.sizes.delete(0, ctk.END)
-        if potential_sizes:
-            [self.sizes.insert(tk.END, ps) for ps in sorted(potential_sizes)]
+        if selected_collections:
+            potential_sizes = self.dataset.dictionary[self.dataset.dictionary['collection'].isin(selected_collections)]['size'].unique().tolist()
+            self.sizes.delete(0, ctk.END)
+            if potential_sizes:
+                [self.sizes.insert(tk.END, ps) for ps in sorted(potential_sizes)]
 
     def __on_size_select__(self, *args):
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
         selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
-        potential_colors = self.dataset.dictionary[
-            (self.dataset.dictionary['collection'].isin(selected_collections)) & (self.dataset.dictionary['size'].isin(selected_sizes))
-            ]['color'].unique().tolist()
-        self.colors.delete(0, ctk.END)
-        if potential_colors:
-            [self.colors.insert(tk.END, color) for color in sorted(potential_colors)]
+        if selected_sizes:
+            potential_colors = self.dataset.dictionary[
+                (self.dataset.dictionary['collection'].isin(selected_collections)) & (self.dataset.dictionary['size'].isin(selected_sizes))
+                ]['color'].unique().tolist()
+            self.colors.delete(0, ctk.END)
+            if potential_colors:
+                [self.colors.insert(tk.END, color) for color in sorted(potential_colors)]
 
     def __on_color_select__(self, *args):
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]

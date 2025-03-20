@@ -549,7 +549,6 @@ class Product:
     
             cogs['year-month'] = cogs['date'].dt.year.astype('str') + '-' + cogs['date'].dt.month.astype('str')
             
-            sales['year-month'] = sales['date'].dt.year.astype('str') + '-' + sales['date'].dt.month.astype('str')
             cogs['product_cost'] = -cogs['product_cost']
             cogs = self.__attach_marketplace__(cogs, 'channel')
             cogs = self.__attach_collection__(cogs)
@@ -648,20 +647,85 @@ class Product:
                 ['date','marketplace','collection','sub-collection','size','color']
                 )['changes'].agg(lambda x: ' | '.join(x.unique().tolist())).reset_index()
             return changes
+        
+        def __summarize_non_product_ads__():
+            sba = Product.dataset.sba[['date','cost','unitsSold14d','attributedSales14d', 'country_code']].groupby(
+                ['date','country_code']
+                ).agg('sum').reset_index()
             
+            sba = sba.rename(
+                columns={
+                    'country_code':'marketplace',
+                    'cost':'sba_spend',
+                    'unitsSold14d':'sba_unitsSold',
+                    'attributedSales14d':'sba_Sales'}
+                )
+            sba['marketplace'] = sba['marketplace'].replace('UK','GB')
+            sba['date'] = pd.to_datetime(sba['date'])
+            sba = sba[sba['date'].dt.date.between(self.start, self.end)]
+            
+            
+            dsp = Product.dataset.dsp[
+                ['date', 'total_cost', 'totalUnitsSold','totalSales']
+                ].groupby('date').agg('sum').reset_index()
+            dsp['date'] = pd.to_datetime(dsp['date'])
+            dsp = dsp[dsp['date'].dt.date.between(self.start, self.end)]
 
-        def __merge_summary__(sales, cogs, fees, ad_spend, purchased, storage, br, changes):
+            dsp = dsp.rename(
+                columns={
+                    'total_cost':'dsp_spend',
+                    'totalUnitsSold':'dsp_unitsSold',
+                    'totalSales':'dsp_Sales'}
+                )
+            dsp['marketplace'] = 'US'
+            
+            result = pd.merge(sba, dsp, how = 'outer', on = ['date','marketplace'])
+            
+            result[['sba_spend','dsp_spend']] = -result[['sba_spend','dsp_spend']]
+            result['collection'] = '[sb and dsp campaigns]'
+            return result
+
+        def __summarize_returns__():
+            orders = self.orders_df[['pacific_date', 'amazon_order_id','sales_channel']].copy()
+            orders = orders.rename(columns={'pacific_date':'date'})
+            orders['date'] = pd.to_datetime(orders['date'])
+            orders = orders[orders['date'].dt.date.between(self.start, self.end)]
+            orders = orders.groupby('amazon_order_id').agg('min').reset_index()
+            
+            returns = self.returns_df[['order_id', 'sku', 'asin', 'quantity']].copy()
+            returns = returns.rename(columns={'order_id':'amazon_order_id','quantity':'returned_units'})
+            result = pd.merge(returns, orders, how='inner', on='amazon_order_id')
+            result = self.__attach_marketplace__(result, 'sales_channel')
+            result = self.__attach_collection__(result)
+            result = result.groupby(
+                ['date', 'marketplace', 'collection', 'sub-collection', 'size', 'color']
+                )['returned_units'].agg('sum').reset_index()
+            return result
+            
+        def __merge_summary__(
+                sales, cogs, fees, ad_spend, purchased, storage,
+                br, changes, sba, returns
+                ):
+            sales['year-month'] = sales['date'].dt.year.astype('str') + '-' + sales['date'].dt.month.astype('str')
+            
+            sales['cogs_market'] = sales['marketplace']\
+                    .replace('FR','EU')\
+                    .replace('DE','EU')\
+                    .replace('ES','EU')\
+                    .replace('IT','EU')
+            cogs = cogs.rename(columns={'marketplace':'cogs_market'})
             sales = pd.merge(
                 sales,
                 cogs[
-                    ['year-month', 'sku','marketplace', 'collection', 'sub-collection',
+                    ['year-month', 'sku','cogs_market', 'collection', 'sub-collection',
                       'size','color','product_cost']
                     ],
                 how='left',
-                on=['year-month','sku','marketplace','collection', 'sub-collection', 'size','color'],
+                on=['year-month','sku','cogs_market','collection', 'sub-collection', 'size','color'],
                 validate="many_to_one"
                 )
             sales['product_cost'] = sales['product_cost'] * sales['units_sold']
+            del sales['cogs_market']
             
             
             sales = pd.merge(
@@ -684,7 +748,7 @@ class Product:
                 'color'],
                 validate="one_to_one"
                 )
-    
+
             sales = pd.merge(
                 sales,
                 storage,
@@ -718,12 +782,8 @@ class Product:
             sales['sku'] = sales['sku'].fillna(sales['asin'])
             del sales['asin']
     
-           
-            sales['profit w/o overhead'] = sales[['sales','promo_discount','referral_fee','fba_fee','product_cost','spend','storage']].sum(axis=1)
-            sales['ad_units'] = sales['unitsSoldOwnPPC'] + sales['unitsSoldOtherPPC']
-            sales['ad_sales'] = sales['salesOwnPPC'] + sales['salesOtherPPC']
-            sales['organic_units'] = sales['units_sold'] - sales['ad_units']
-            sales['organic_sales'] = sales['sales'] - sales['ad_sales']
+            sales = sales.fillna(0)
+
             sales = pd.merge(
                 sales,
                 br,
@@ -733,6 +793,10 @@ class Product:
                 )
             sales['sku'] = sales['sku'].fillna(sales['asin'])
             del sales['asin']
+            
+            #sponsored brands section
+            sales = pd.merge(sales, sba, how='outer', on=['date', 'marketplace','collection'])
+            
             sales = sales.fillna(0)
 
             sales = pd.merge(
@@ -742,7 +806,26 @@ class Product:
                 on=['date', 'marketplace', 'collection', 'sub-collection', 'size', 'color'],
                 validate='one_to_one'
                 )
+            
+            sales['profit w/o overhead'] = sales[
+                ['sales','promo_discount','referral_fee','fba_fee',
+                 'product_cost','spend','storage','sba_spend', 'dsp_spend']
+                ].sum(axis=1)
+            sales['ad_units'] = sales[['unitsSoldOwnPPC','unitsSoldOtherPPC','sba_unitsSold','dsp_unitsSold']].sum(axis=1)
+            sales['ad_sales'] = sales[['salesOwnPPC','salesOtherPPC','sba_Sales','dsp_Sales']].sum(axis=1)
+            sales['organic_units'] = sales['units_sold'] - sales['ad_units']
+            sales['organic_sales'] = sales['sales'] - sales['ad_sales']
+            
+            sales = pd.merge(
+                sales,
+                returns,
+                how = 'outer',
+                on = ['date', 'marketplace', 'collection', 'sub-collection', 'size', 'color'],
+                validate='one_to_one'
+                )
+            
             sales['date'] = sales['date'].dt.date
+            sales = sales.replace(0,nan)
             return sales
         
         sales = __summarize_sales__()
@@ -753,8 +836,12 @@ class Product:
         storage = __summarize_storage_fees__()
         br = __summarize_br__()
         changes = __summarize_changelog__()
+        sba = __summarize_non_product_ads__()
+        returns = __summarize_returns__()
         
-        self.sales_summary = __merge_summary__(sales, cogs, fees, ad_spend, purchased, storage, br, changes)
+        self.sales_summary = __merge_summary__(
+            sales, cogs, fees, ad_spend, purchased, storage, br, changes, sba, returns
+            )
     
 
 # dataset = Dataset(
@@ -766,7 +853,7 @@ class Product:
 # skus = dataset.dictionary['sku'].unique().tolist()
 # # skus = dataset.dictionary[dataset.dictionary['collection']=='Microfiber Pillow Covers w/zipper']['sku'].unique().tolist()
 
-# product = Product(dataset=dataset, sku=skus, start="2025-02-01", end="2025-12-31")
+# product = Product(dataset=dataset, sku=skus, start="2025-03-09", end="2025-03-15")
 # product.populate_loop()    
     
 # self = product
