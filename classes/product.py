@@ -853,7 +853,15 @@ class Product:
 # skus = dataset.dictionary['sku'].unique().tolist()
 # # skus = dataset.dictionary[dataset.dictionary['collection']=='Microfiber Pillow Covers w/zipper']['sku'].unique().tolist()
 
-# product = Product(dataset=dataset, sku=skus, start="2025-03-09", end="2025-03-15")
+# product = Product(dataset=dataset, sku=skus, start="2025-01-01", end="2025-12-31")
 # product.populate_loop()    
     
 # self = product
+
+# from connectors import gcloud as gc
+# client = gc.gcloud_connect()
+# import pandas_gbq
+
+# self.summarize()
+# summary = gc.normalize_columns(self.sales_summary)
+# pandas_gbq.to_gbq(summary, 'mellanni-project-da.auxillary_development.dashboard', if_exists='replace')
