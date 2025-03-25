@@ -89,7 +89,7 @@ class App(ctk.CTk):
         self.dataset_methods.grid(row=1, column=0, padx=10, sticky='n')
 
 
-        self.collections_select = ctk.CTkCheckBox(self.mid_frame, text='Select all products', command=lambda: self.__select_all__('products'))
+        self.collections_select = ctk.CTkCheckBox(self.mid_frame, text='Select all products', command=lambda: self.__select_all__('products'),state='disabled')
         self.collections_select.grid(row=0, column=1)
         #collection
         self.collection_label = ctk.CTkLabel(self.mid_frame, text='Collection')
@@ -113,7 +113,7 @@ class App(ctk.CTk):
         self.collections.grid(row=2, column=1, rowspan=3, padx=5)
 
         #size
-        self.size_select = ctk.CTkCheckBox(self.mid_frame, text='select all sizes', command=lambda: self.__select_all__('sizes'))
+        self.size_select = ctk.CTkCheckBox(self.mid_frame, text='select all sizes', command=lambda: self.__select_all__('sizes'),state='disabled')
         self.size_select.grid(row=1, column=2)
         self.sizes = tk.Listbox(
             self.mid_frame,
@@ -134,7 +134,7 @@ class App(ctk.CTk):
         self.sizes.grid(row=2, column=2, sticky='n', padx=5)
 
         #color
-        self.color_select = ctk.CTkCheckBox(self.mid_frame, text='select all colors', command=lambda: self.__select_all__('colors'))
+        self.color_select = ctk.CTkCheckBox(self.mid_frame, text='select all colors', command=lambda: self.__select_all__('colors'),state='disabled')
         self.color_select.grid(row=3, column=2)
         self.colors = tk.Listbox(
             self.mid_frame,
@@ -267,6 +267,9 @@ class App(ctk.CTk):
             text=f'''Dataset queried for {self.start_date.get()} - {self.end_date.get()}, markets: {', '.join([x.cget('text') for x in self.markets if x.get()])} from {self.data_selector.cget('text')} in {total_time:.1f} seconds'''
             )
         self.product_button.configure(state='normal', text='Download\nproduct')
+        self.collections_select.configure(state='normal')
+        self.color_select.configure(state='normal')
+        self.size_select.configure(state='normal')
         if self.run_params.get('method') == 'query':
             collections = sorted(self.dataset.dictionary['collection'].unique().tolist())
             collections = [x for x in collections if x not in excluded_collections]
