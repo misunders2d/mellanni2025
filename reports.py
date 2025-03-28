@@ -1,8 +1,10 @@
 from connectors import gcloud as gc
+import pandas as pd
 import customtkinter as ctk
 from common import user_folder
 from utils import mellanni_modules as mm
 import time, os
+import pytz
 
 client = gc.gcloud_connect()
 tables = gc.get_tables('reports')
@@ -27,6 +29,17 @@ class Report(ctk.CTk):
         self.query_field = ctk.CTkTextbox(self, width=1200, height=100)
         self.query_field.pack()
 
+    def convert_timezones(self, df:pd.DataFrame):
+        columns = df.columns.tolist()
+        for column in columns:
+            if pd.api.types.is_datetime64_any_dtype(df[column]) and df[column].dt.tz is not None:
+                if df[column].dt.tz != 'US/Pacific':
+                    df[f'{column}_TZ'] = df[column].dt.tz
+                    df[f'{column}_pacific'] = df[column].dt.tz_convert('US/Pacific').dt.tz_localize(None)
+
+                df[column] = df[column].dt.tz_localize(None)
+        return df
+
     def run_select_all(self, *args):
         for label in self.labels:
             if self.select_all.get():
@@ -36,15 +49,9 @@ class Report(ctk.CTk):
 
     def pull_bq(self):
         query_string = self.query_field.get(0.0, ctk.END)
-        print(query_string)
-        # table_name = self.table_list.get()
-        # column_names = [label.cget("text") for label in self.labels if label.get()]
-        # if column_names:
-        #     columns = ', '.join(column_names)
-        #     query = f'''SELECT {columns} FROM `reports.{table_name}` LIMIT 100'''
-        df = client.query(query_string.strip()).to_dataframe()
-        print(df)
-        df.to_excel(os.path.join(user_folder, 'report_export.xlsx'), index = False)
+        df: pd.DataFrame = client.query(query_string.strip()).to_dataframe()
+        df = self.convert_timezones(df)
+        mm.export_to_excel([df],['bq_result'],'reports.xlsx')
         mm.open_file_folder(user_folder)
 
     def print_checkbox(self, *args, **kwargs):
