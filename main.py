@@ -46,7 +46,8 @@ class MainApp(ctk.CTk):
 
     def update(self):
         import subprocess
-        subprocess.call(['git','pull'])
+        subprocess.call(['git','restore','.'])
+        subprocess.call(['git','pull', '-f'])
         subprocess.call(['pip','install','-r','requirements.txt'])
     
     def call_flat_file_transfer(self):
