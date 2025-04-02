@@ -243,6 +243,7 @@ class Dataset:
             for market, (folder_id, file_name) in dict_ids.items():
                 dictionary_id = gd.find_file_id(folder_id=folder_id, filename=file_name, drive_id='0AMdx9NlXacARUk9PVA')
                 temp:pd.DataFrame = pd.read_excel(gd.download_file(file_id=dictionary_id))
+                temp['marketplace'] = market
                 result = pd.concat([result, temp])
             
             result = result.dropna(subset='Collection')

@@ -19,8 +19,8 @@ if not os.path.exists('credentials'):
 
 method_list = {name:func for name, func in Dataset.__dict__.items() if name.startswith('pull')}
 
-start_date = "2025-01-01"
-end_date = "2025-12-31"
+start_date = (pd.to_datetime('today') - pd.DateOffset(days=181)).date()
+end_date = (pd.to_datetime('today') - pd.DateOffset(days=1)).date()
 default_market_list = ["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES"]
 
 ctk.set_appearance_mode('dark')
@@ -37,7 +37,7 @@ class App(ctk.CTk):
         self.run_params = {}
         
         # top frame ##################################
-        self.controls_frame = ctk.CTkFrame(self, width = width, height=80)
+        self.controls_frame = ctk.CTkFrame(self, width = width, height=110)
         self.controls_frame.grid_propagate(False)
         self.controls_frame.pack()
         #dates
@@ -64,6 +64,21 @@ class App(ctk.CTk):
             fg_color='green',
             command=self.__data_selection__)
         self.data_selector.grid(row=0, column=2, padx=50)
+
+        #mode selection
+        self.mode_selector = ctk.CTkSwitch(
+            self.controls_frame,
+            width=120,
+            text='Restock',
+            progress_color='red',
+            fg_color='green',
+            command=self.__mode_set__)
+        self.mode_selector.grid(row=1, column=2, padx=50)
+
+        #additional options for restock
+        self.include_empty = ctk.CTkCheckBox(self.controls_frame, text='Include all SKUs in restock')
+        self.include_empty.grid(row=2, column=2)
+
 
         #markets
         self.__place_labels__(default_market_list)
@@ -156,8 +171,8 @@ class App(ctk.CTk):
 
         self.skus_label = ctk.CTkLabel(self.mid_frame, text='SKU/ASIN search')
         self.skus_label.grid(row=1, column=3)
-        self.skus_input = ctk.CTkTextbox(self.mid_frame)
-        self.skus_input.grid(row=2, column=3,columnspan=2, sticky='n', padx=5)
+        self.skus_input = ctk.CTkTextbox(self.mid_frame, height=400)
+        self.skus_input.grid(row=2, column=3,columnspan=2, rowspan=3, sticky='n', padx=5)
 
         self.product_button = ctk.CTkButton(
             self.mid_frame,
@@ -191,6 +206,7 @@ class App(ctk.CTk):
         self.executor.submit(self.export_product)
 
     def export_product(self):
+        export_mode = 'stats' if self.mode_selector.get() else 'restock'
         selected_skus = [x for x in re.split(r'[,\n\r\t]+', self.skus_input.get(0.0, ctk.END).strip()) if x]
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
         selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
@@ -217,9 +233,12 @@ class App(ctk.CTk):
             product = Product(asin=asins, dataset=self.dataset, start=date_from, end=date_to)
             product.populate_loop()
             # product.save_to_file()
-            # product.calculate_loop()
-            product.summarize()
-            product.export()
+            product.calculate_loop()
+            if export_mode == 'stats':
+                product.summarize()
+            elif export_mode == 'restock':
+                product.restock(include_empty=self.include_empty.get())
+            product.export(mode=export_mode)
             self.progress.stop()
             self.status_label.configure(text=f'Done, exported data for {len(asins)} items')
 
@@ -315,6 +334,14 @@ class App(ctk.CTk):
         else:
             self.data_selector.configure(text="Local data")
             self.start_date.configure(state='disabled')
+
+    def __mode_set__(self):
+        if self.mode_selector.get():
+            self.mode_selector.configure(text="Full stats")
+            self.include_empty.grid_remove()
+        else:
+            self.mode_selector.configure(text="Restock")
+            self.include_empty.grid()
 
     def __place_labels__(self, market_list):
         row, column = 0, 3

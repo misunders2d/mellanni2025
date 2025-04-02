@@ -4,10 +4,15 @@ import pandas as pd
 from utils import mellanni_modules as mm
 from utils.decorators import error_checker
 
-from common import user_folder
-import os, pickle
+from common import user_folder, event_dates
+event_dates_complete = [date for daterange in event_dates.values() for date in daterange]
+
+import os, pickle, re
 import asyncio
-from numpy import nan
+from numpy import nan, ceil, floor
+
+import warnings
+warnings.filterwarnings("ignore")
 
 class Product:
     dataset = None
@@ -33,8 +38,11 @@ class Product:
         self.sub_collections = set()
         self.sizes = set()
         self.colors = set()
-        Product.dataset = dataset
-        self.dataset_delete = False # delete the lines for this specific set of asins from Product.dataset
+        
+        self.individual_products = {}
+        
+        self.dataset = dataset
+        self.dataset_delete = False # delete the lines for this specific set of asins from self.dataset
         self.combined_dfs = {}
         self.stats = {}
         if asin and isinstance(asin, str):
@@ -48,7 +56,7 @@ class Product:
         self._init_skus()
 
     def _init_skus(self):
-        dictionary = Product.dataset.dictionary
+        dictionary = self.dataset.dictionary
         # pull initial dictionary data for the provided asin or sku
         id_list = dictionary[
             (dictionary['asin'].isin(self.asins)) | (dictionary['sku'].isin(self.skus))
@@ -66,6 +74,7 @@ class Product:
         self.sub_collections.update({x[3] for x in id_list})
         self.sizes.update({x[4] for x in id_list})
         self.colors.update({x[5] for x in id_list})
+        self.__update_product__(dictionary)
     
     def _update_ids(self, df):
         if 'sku' in df.columns:
@@ -73,11 +82,54 @@ class Product:
         if 'asin' in df.columns:
             self.asins.update(df['asin'].unique())
 
+    def __update_product__(self, df):
+        if not all([x in df.columns.tolist() for x in ('collection','sub-collection','size','color','marketplace')]):
+            try:
+                df = self.__attach_collection__(df)
+            except Exception as e:
+                print(f'Error while updating individual product: {e}')
+        if 'sku' in df.columns:
+            sku_df = df.groupby(['collection','sub-collection','size','color','marketplace']).agg({'sku':lambda x: x.unique().tolist()}).reset_index()
+            for i, row in sku_df.iterrows():
+                individual_product = (
+                    row['collection'],row['sub-collection'],row['size'],row['color'],row['marketplace']
+                    )
+                if individual_product in self.individual_products:
+                    self.individual_products[individual_product]['sku'].update(set(row['sku']))
+                else:
+                    self.individual_products[individual_product] = {'sku':set(), 'asin':set()}
+                    self.individual_products[individual_product]['sku'] = set(row['sku'])
+                    
+        if 'asin' in df.columns:
+            asin_df = df.groupby(['collection','sub-collection','size','color','marketplace']).agg({'asin':lambda x: x.unique().tolist()}).reset_index()
+            for i, row in asin_df.iterrows():
+                individual_product = (
+                    row['collection'],row['sub-collection'],row['size'],row['color'],row['marketplace']
+                    )
+                if individual_product in self.individual_products:
+                    self.individual_products[individual_product]['asin'].update(set(row['asin']))
+                else:
+                    self.individual_products[individual_product] = {'sku':set(),'asin':set()}
+                    self.individual_products[individual_product]['asin'] = set(row['asin'])
+
+    def __attach_ids__(self, df):
+        if not all([x in df.columns.tolist() for x in ('collection','sub-collection','size','color','marketplace')]):
+            return
+        all_rows = []
+        for i, row in df.iterrows():
+            product = tuple(row[['collection','sub-collection','size','color','marketplace']].values.tolist())
+            row['asin'] = '\n'.join([x for x in self.individual_products[product]['asin']])
+            row['sku'] = '\n'.join([x for x in self.individual_products[product]['sku']])
+            all_rows.append(row)
+        new_df = pd.DataFrame(data=all_rows)
+        return new_df
+            
+
     def __attach_collection__(self, df):
-        product_dict = Product.dataset.dictionary[
-            (Product.dataset.dictionary['sku'].isin(self.skus))
+        product_dict = self.dataset.dictionary[
+            (self.dataset.dictionary['sku'].isin(self.skus))
             |
-            (Product.dataset.dictionary['asin'].isin(self.asins))
+            (self.dataset.dictionary['asin'].isin(self.asins))
             ][['sku', 'asin', 'collection', 'sub-collection', 'size', 'color']]
 
         result = df.copy()
@@ -112,7 +164,7 @@ class Product:
 
     def __attach_marketplace__(self, df, channel_column):
         df['marketplace'] = df[channel_column].apply(
-            lambda x: [key for key,value in Product.dataset.channels_mapping.items() if x.lower()==value.lower()][0]
+            lambda x: [key for key,value in self.dataset.channels_mapping.items() if x.lower()==value.lower()][0]
             )
         return df
     
@@ -127,98 +179,98 @@ class Product:
 
     ### Populate data section ###
     def _pull_orders(self):
-        self.orders_df = Product.dataset.orders[(Product.dataset.orders['sku'].isin(self.skus)) | (Product.dataset.orders['asin'].isin(self.asins))]
+        self.orders_df = self.dataset.orders[(self.dataset.orders['sku'].isin(self.skus)) | (self.dataset.orders['asin'].isin(self.asins))]
         if self.dataset_delete:
-            Product.dataset.orders = Product.dataset.orders[~Product.dataset.orders.index.isin(self.orders_df.index)]
+            self.dataset.orders = self.dataset.orders[~self.dataset.orders.index.isin(self.orders_df.index)]
         self._update_ids(self.orders_df)
 
     def _pull_br(self):
-        self.br_df = Product.dataset.br[(Product.dataset.br['sku'].isin(self.skus)) | (Product.dataset.br['asin'].isin(self.asins))]
+        self.br_df = self.dataset.br[(self.dataset.br['sku'].isin(self.skus)) | (self.dataset.br['asin'].isin(self.asins))]
         if self.dataset_delete:
-            Product.dataset.br = Product.dataset.br[~Product.dataset.br.index.isin(self.br_df.index)]
+            self.dataset.br = self.dataset.br[~self.dataset.br.index.isin(self.br_df.index)]
         self._update_ids(self.br_df)
 
     def _pull_br_asin(self):
-        self.br_asin_df = Product.dataset.br_asin[Product.dataset.br_asin['asin'].isin(self.asins)]
+        self.br_asin_df = self.dataset.br_asin[self.dataset.br_asin['asin'].isin(self.asins)]
         if self.dataset_delete:
-            Product.dataset.br_asin = Product.dataset.br_asin[~Product.dataset.br_asin.index.isin(self.br_asin_df.index)]
+            self.dataset.br_asin = self.dataset.br_asin[~self.dataset.br_asin.index.isin(self.br_asin_df.index)]
         self._update_ids(self.br_asin_df)
 
     def _pull_inventory(self):
-        self.inventory_df = Product.dataset.inventory[(Product.dataset.inventory['sku'].isin(self.skus)) | (Product.dataset.inventory['asin'].isin(self.asins))]
+        self.inventory_df = self.dataset.inventory[(self.dataset.inventory['sku'].isin(self.skus)) | (self.dataset.inventory['asin'].isin(self.asins))]
         if self.dataset_delete:
-            Product.dataset.inventory = Product.dataset.inventory[~Product.dataset.inventory.index.isin(self.inventory_df.index)]
+            self.dataset.inventory = self.dataset.inventory[~self.dataset.inventory.index.isin(self.inventory_df.index)]
         self._update_ids(self.inventory_df)
 
     def _pull_inventory_history(self):
-        self.inventory_history_df = Product.dataset.inventory_history[(Product.dataset.inventory_history['sku'].isin(self.skus)) | (Product.dataset.inventory_history['asin'].isin(self.asins))]
+        self.inventory_history_df = self.dataset.inventory_history[(self.dataset.inventory_history['sku'].isin(self.skus)) | (self.dataset.inventory_history['asin'].isin(self.asins))]
         if self.dataset_delete:
-            Product.dataset.inventory_history = Product.dataset.inventory_history[~Product.dataset.inventory_history.index.isin(self.inventory_history_df.index)]
+            self.dataset.inventory_history = self.dataset.inventory_history[~self.dataset.inventory_history.index.isin(self.inventory_history_df.index)]
         self._update_ids(self.inventory_history_df)
 
     def _pull_advertised_product(self):
-        self.advertised_product_df = Product.dataset.advertised_product[(Product.dataset.advertised_product['sku'].isin(self.skus)) | (Product.dataset.advertised_product['asin'].isin(self.asins))]
+        self.advertised_product_df = self.dataset.advertised_product[(self.dataset.advertised_product['sku'].isin(self.skus)) | (self.dataset.advertised_product['asin'].isin(self.asins))]
         if self.dataset_delete:
-            Product.dataset.advertised_product = Product.dataset.advertised_product[~Product.dataset.advertised_product.index.isin(self.advertised_product_df.index)]
+            self.dataset.advertised_product = self.dataset.advertised_product[~self.dataset.advertised_product.index.isin(self.advertised_product_df.index)]
         self._update_ids(self.advertised_product_df)
 
     def _pull_purchased_product(self):
-        self.purchased_product_df = Product.dataset.purchased_product[
-            (Product.dataset.purchased_product['sku'].isin(self.skus)) |
-            (Product.dataset.purchased_product['asin'].isin(self.asins)) |
-            (Product.dataset.purchased_product['purchasedAsin'].isin(self.asins))
+        self.purchased_product_df = self.dataset.purchased_product[
+            (self.dataset.purchased_product['sku'].isin(self.skus)) |
+            (self.dataset.purchased_product['asin'].isin(self.asins)) |
+            (self.dataset.purchased_product['purchasedAsin'].isin(self.asins))
             ]
 
     def _pull_promotions(self):
-        self.promotions_df = Product.dataset.promotions[(Product.dataset.promotions['sku'].isin(self.skus))]
+        self.promotions_df = self.dataset.promotions[(self.dataset.promotions['sku'].isin(self.skus))]
         if self.dataset_delete:
-            Product.dataset.promotions = Product.dataset.promotions[~Product.dataset.promotions.index.isin(self.promotions_df.index)]
+            self.dataset.promotions = self.dataset.promotions[~self.dataset.promotions.index.isin(self.promotions_df.index)]
         self._update_ids(self.promotions_df)
 
     def _pull_returns(self):
-        self.returns_df = Product.dataset.returns[(Product.dataset.returns['sku'].isin(self.skus)) | (Product.dataset.returns['asin'].isin(self.asins))]
+        self.returns_df = self.dataset.returns[(self.dataset.returns['sku'].isin(self.skus)) | (self.dataset.returns['asin'].isin(self.asins))]
         if self.dataset_delete:
-            Product.dataset.returns = Product.dataset.returns[~Product.dataset.returns.index.isin(self.returns_df.index)]
+            self.dataset.returns = self.dataset.returns[~self.dataset.returns.index.isin(self.returns_df.index)]
         self._update_ids(self.returns_df)
 
     def _pull_fees_dimensions(self):
-        self.fees_dimensions_df = Product.dataset.fees[(Product.dataset.fees['sku'].isin(self.skus)) | (Product.dataset.fees['asin'].isin(self.asins))]
+        self.fees_dimensions_df = self.dataset.fees[(self.dataset.fees['sku'].isin(self.skus)) | (self.dataset.fees['asin'].isin(self.asins))]
         if self.dataset_delete:
-            Product.dataset.fees = Product.dataset.fees[~Product.dataset.fees.index.isin(self.fees_dimensions_df.index)]
+            self.dataset.fees = self.dataset.fees[~self.dataset.fees.index.isin(self.fees_dimensions_df.index)]
         self._update_ids(self.fees_dimensions_df)
 
     def _pull_warehouse(self):
-        self.warehouse_df = Product.dataset.warehouse[Product.dataset.warehouse['sku'].isin(self.skus)]
+        self.warehouse_df = self.dataset.warehouse[self.dataset.warehouse['sku'].isin(self.skus)]
         if self.dataset_delete:
-            Product.dataset.warehouse = Product.dataset.warehouse[~Product.dataset.warehouse.index.isin(self.warehouse_df.index)]
+            self.dataset.warehouse = self.dataset.warehouse[~self.dataset.warehouse.index.isin(self.warehouse_df.index)]
         self._update_ids(self.warehouse_df)
     
     def _pull_changelog(self):
-        self.changelog_df = Product.dataset.changelog[(Product.dataset.changelog['sku'].isin(self.skus))]
+        self.changelog_df = self.dataset.changelog[(self.dataset.changelog['sku'].isin(self.skus))]
         if self.dataset_delete:
-            Product.dataset.changelog = Product.dataset.changelog[~Product.dataset.changelog.index.isin(self.changelog_df.index)]
+            self.dataset.changelog = self.dataset.changelog[~self.dataset.changelog.index.isin(self.changelog_df.index)]
     
     def _pull_incoming(self):
-        self.incoming_df = Product.dataset.incoming[Product.dataset.incoming['sku'].isin(self.skus)]
+        self.incoming_df = self.dataset.incoming[self.dataset.incoming['sku'].isin(self.skus)]
         if self.dataset_delete:
-            Product.dataset.incoming = Product.dataset.incoming[~Product.dataset.incoming.index.isin(self.incoming_df.index)]
+            self.dataset.incoming = self.dataset.incoming[~self.dataset.incoming.index.isin(self.incoming_df.index)]
 
     def _pull_pricing(self):
-        self.pricing_df = Product.dataset.pricing[Product.dataset.pricing['sku'].isin(self.skus)]
+        self.pricing_df = self.dataset.pricing[self.dataset.pricing['sku'].isin(self.skus)]
         if self.dataset_delete:
-            Product.dataset.pricing = Product.dataset.pricing[~Product.dataset.pricing.index.isin(self.pricing_df.index)]
+            self.dataset.pricing = self.dataset.pricing[~self.dataset.pricing.index.isin(self.pricing_df.index)]
 
     def _pull_cogs(self):
-        self.cogs_df = Product.dataset.cogs[Product.dataset.cogs['sku'].isin(self.skus)]
+        self.cogs_df = self.dataset.cogs[self.dataset.cogs['sku'].isin(self.skus)]
         if self.dataset_delete:
-            Product.dataset.cogs = Product.dataset.cogs[~Product.dataset.cogs.index.isin(self.cogs_df.index)]
+            self.dataset.cogs = self.dataset.cogs[~self.dataset.cogs.index.isin(self.cogs_df.index)]
 
     ### async section ###
     async def _pull_data(self, pull_function):
         await asyncio.to_thread(pull_function)
 
     async def populate(self):
-        """ function that pulls all data for a product from the provided Product.dataset """
+        """ function that pulls all data for a product from the provided self.dataset """
         tasks = [
             self._pull_data(self._pull_orders),
             self._pull_data(self._pull_br),
@@ -240,7 +292,7 @@ class Product:
 
     ### normal loop section ###
     def populate_loop(self):
-        """ function that pulls all data for a product from the provided Product.dataset """
+        """ function that pulls all data for a product from the provided self.dataset """
         self._pull_orders()
         self._pull_br()
         self._pull_br_asin()
@@ -316,7 +368,7 @@ class Product:
     def _calculate_orders(self):
         self.orders_df['pacific_date'] = pd.to_datetime(self.orders_df['pacific_date']).dt.date
         orders = self.orders_df[(self.orders_df['pacific_date'] >= self.start) & (self.orders_df['pacific_date'] <= self.end)]
-        orders = orders.groupby(['pacific_date','sku','sales_channel']).agg({'units_sold':'sum', 'sales':'sum'}).reset_index()
+        orders = orders.groupby(['pacific_date','sku','asin','sales_channel']).agg({'units_sold':'sum', 'sales':'sum'}).reset_index()
         orders_sum = orders.groupby(['sales_channel','sku']).agg(
             {'units_sold':'sum', 'sales':'sum', 'pacific_date':lambda x: [len(x),min(x), max(x)]}).reset_index()
         if orders_sum['pacific_date'].tolist():
@@ -349,10 +401,13 @@ class Product:
             ['date','sku','asin','marketplace']).agg('sum').reset_index()
         self.combined_dfs['inventory_history'] = self.inventory_history
         isr_df = self.inventory_history.copy()
-        n_days = (min(end, today) - start).days
-        isr_df['in stock'] = isr_df['Inventory_Supply_at_FBA'] > 2
-        self.stats['isr_sku'] = isr_df.groupby(['sku','asin','marketplace']).agg({'in stock':'mean'}).reset_index() # replace with lambda x: sum(x)/n_days}) later
-        self.stats['isr_total'] = isr_df.groupby(['marketplace']).agg({'in stock':'mean'}).reset_index() # replace with lambda x: sum(x)/n_days}) later
+        n_days = (min(end, today) - start).days #will be used lated to calculate isr more precisely
+        
+        aggfunc = {'in stock':'mean'} #replace with lambda x: sum(x)/n_days
+        isr_df['in stock'] = isr_df['available'] > 2 #replace with 'Inventory_Supply_at_FBA' to calculate total isr including inbound
+        self.stats['isr_sku'] = isr_df.groupby(['sku','marketplace']).agg(aggfunc).reset_index() 
+        self.stats['isr_sku_asin'] = isr_df.groupby(['sku','asin','marketplace']).agg(aggfunc).reset_index()
+        self.stats['isr_total'] = isr_df.groupby(['marketplace']).agg(aggfunc).reset_index()
 
     def _calculate_advertised_product(self):
         self.advertised_product_df['date'] = pd.to_datetime(self.advertised_product_df['date']).dt.date
@@ -421,7 +476,7 @@ class Product:
         await asyncio.to_thread(pull_function)
 
     async def calculate(self):
-        """ function that pulls all data for a product from the provided Product.dataset """
+        """ function that pulls all data for a product from the provided self.dataset """
         tasks = [
             self._calculate_data(self._calculate_br_asin),
             self._calculate_data(self._calculate_br),
@@ -463,30 +518,40 @@ class Product:
             pickle.dump(self, pkl)
 
     @error_checker
-    def export(self):
+    def export(self, mode = 'stats'):
         file_path_stats = os.path.join(user_folder, 'product_stats.xlsx')
         file_path_details = os.path.join(user_folder, 'product_details.xlsx')
         file_summary_path = os.path.join(user_folder, 'product_summary.xlsx')
-        if self.stats:
-            with pd.ExcelWriter(file_path_stats, engine='xlsxwriter') as writer:
-                for key, df in self.stats.items():
-                    df.to_excel(writer, sheet_name=key, index=False)
-                    mm.format_header(df, writer, key)
-
-                for key, df in {'fees':self.fees_dimensions_df, 'prices':self.pricing_df, 'cogs':self.cogs_df}.items():
-                    df.to_excel(writer, sheet_name=key, index = False)
-                    mm.format_header(df, writer, key)
-
-        if self.combined_dfs:
-            with pd.ExcelWriter(file_path_details, engine='xlsxwriter') as writer:
-                for key, df in self.combined_dfs.items():
-                    df.to_excel(writer, sheet_name=key, index=False)
-                    mm.format_header(df, writer, key)
+        if mode == 'stats':
+            if self.stats:
+                with pd.ExcelWriter(file_path_stats, engine='xlsxwriter') as writer:
+                    for key, df in self.stats.items():
+                        df.to_excel(writer, sheet_name=key, index=False)
+                        mm.format_header(df, writer, key)
+    
+                    for key, df in {'fees':self.fees_dimensions_df, 'prices':self.pricing_df, 'cogs':self.cogs_df}.items():
+                        df.to_excel(writer, sheet_name=key, index = False)
+                        mm.format_header(df, writer, key)
+    
+            if self.combined_dfs:
+                with pd.ExcelWriter(file_path_details, engine='xlsxwriter') as writer:
+                    for key, df in self.combined_dfs.items():
+                        df.to_excel(writer, sheet_name=key, index=False)
+                        mm.format_header(df, writer, key)
+                
+            if 'sales_summary' in self.__dict__:
+                with pd.ExcelWriter(file_summary_path, engine='xlsxwriter') as writer:
+                    self.sales_summary.to_excel(writer, sheet_name='sales_summary', index=False)
+                    mm.format_header(self.sales_summary, writer, 'sales_summary')
+        
+        elif mode == 'restock':
+            if not 'restock_summary' in self.__dict__:
+                self.restock()    
             
-        if 'sales_summary' in self.__dict__:
-            with pd.ExcelWriter(file_summary_path, engine='xlsxwriter') as writer:
-                self.sales_summary.to_excel(writer, sheet_name='sales_summary', index=False)
-                mm.format_header(self.sales_summary, writer, 'sales_summary')
+            mm.export_to_excel(
+                [self.restock_summary, self.to_ship], ['restock', 'to ship'], filename='restock.xlsx', out_folder=user_folder
+                )
+                
         mm.open_file_folder(os.path.dirname(file_path_stats))
 
     # summary and restock section
@@ -538,7 +603,7 @@ class Product:
                 ].sum(axis=1) / 30
             storage = storage[
                 ['date', 'sku','collection', 'sub-collection', 'size',
-                'color', 'marketplace', 'storage','excess_storage']
+                'color', 'marketplace', 'storage','excess_storage','Inventory_Supply_at_FBA','available']
                 ]
             return storage
         
@@ -649,7 +714,7 @@ class Product:
             return changes
         
         def __summarize_non_product_ads__():
-            sba = Product.dataset.sba[['date','cost','unitsSold14d','attributedSales14d', 'country_code']].groupby(
+            sba = self.dataset.sba[['date','cost','unitsSold14d','attributedSales14d', 'country_code']].groupby(
                 ['date','country_code']
                 ).agg('sum').reset_index()
             
@@ -665,7 +730,7 @@ class Product:
             sba = sba[sba['date'].dt.date.between(self.start, self.end)]
             
             
-            dsp = Product.dataset.dsp[
+            dsp = self.dataset.dsp[
                 ['date', 'total_cost', 'totalUnitsSold','totalSales']
                 ].groupby('date').agg('sum').reset_index()
             dsp['date'] = pd.to_datetime(dsp['date'])
@@ -842,26 +907,223 @@ class Product:
         self.sales_summary = __merge_summary__(
             sales, cogs, fees, ad_spend, purchased, storage, br, changes, sba, returns
             )
-    
+        
+    @error_checker
+    def restock(self, stock_days=49, max_days=90, include_empty = False):
+        start, end, today = pd.to_datetime(self.start).date(), pd.to_datetime(self.end).date(), (pd.to_datetime('today')-pd.Timedelta(days=1)).date()
+        two_weeks_back = (min(end,today) - pd.DateOffset(days=13)).date()
+        
+        full_range = [x.date() for x in pd.date_range(start, min(end, today))]
+        two_weeks = [x.date() for x in pd.date_range(two_weeks_back, min(end, today))]
+        calc_range = [x for x in full_range if x not in event_dates_complete]
+        calc_range_two_weeks = [x for x in two_weeks if x not in event_dates_complete]
+        num_days = len(calc_range)
+        two_weeks_days = len(calc_range_two_weeks)
+        
+        long_term_sales_col = f'units sold {num_days} days'
+        short_term_sales_col = f'units sold {two_weeks_days} days'
+        long_term_average_sales = f'average sales {num_days} days'
+        short_term_average_sales = f'average sales {two_weeks_days} days'
 
-# dataset = Dataset(
-#     start="2025-01-01", end="2025-12-31",
-#     market=["US", "CA", "GB", "UK","MX", "FR", "DE", "IT", "ES"],
-#     local_data=True,save=False)
-# dataset.query_sync()
+        def get_product_isr():
+            isr = self.combined_dfs['inventory_history'].copy()
+            isr['date'] = pd.to_datetime(isr['date']).dt.date
+            isr = isr[~isr['date'].isin(event_dates_complete)]
+            isr = self.__attach_collection__(isr)
+            self.__update_product__(isr)
+            isr = isr.groupby(
+                ['date','marketplace','collection', 'sub-collection', 'size','color']
+                ).agg({'available':'sum'}).reset_index()
+            isr['isr'] = isr['available'] > 2
+            isr = isr.groupby(
+                ['marketplace','collection', 'sub-collection', 'size','color']
+                ).agg({'isr':'mean'}).reset_index()
+            return isr
+            
+        def get_product_sales():
+            sales = self.combined_dfs['orders'].copy()
+            sales = sales[~sales['pacific_date'].isin(event_dates_complete)]
+            sales = self.__attach_marketplace__(sales, 'sales_channel')        
+            sales = self.__attach_collection__(sales)
+            self.__update_product__(sales)
+            sales_two_weeks = sales[sales['pacific_date'].isin(calc_range_two_weeks)]
+            sales = sales.groupby(
+                ['marketplace','collection', 'sub-collection', 'size','color']
+                ).agg({'units_sold':'sum'}).reset_index()
+            sales = sales.rename(columns={'units_sold':long_term_sales_col})
+            sales_two_weeks = sales_two_weeks.groupby(
+                ['marketplace','collection', 'sub-collection', 'size','color']
+                ).agg({'units_sold':'sum'}).reset_index()
+            sales_two_weeks = sales_two_weeks.rename(columns={'units_sold':short_term_sales_col})
+            total_sales = pd.merge(
+                sales, sales_two_weeks, how = 'outer', on = ['marketplace','collection', 'sub-collection', 'size','color'],
+                validate='one_to_one')
+            return total_sales
+        
+        def get_inventory():
+            overstock_cols = ['quantity_to_be_charged_ais_181_210_days',
+                'quantity_to_be_charged_ais_211_240_days',
+                'quantity_to_be_charged_ais_241_270_days',
+                'quantity_to_be_charged_ais_271_300_days',
+                'quantity_to_be_charged_ais_301_330_days',
+                'quantity_to_be_charged_ais_331_365_days',
+                'quantity_to_be_charged_ais_365_PLUS_days']
+            excess_fee_cols = ['estimated_ais_181_210_days', 'estimated_ais_211_240_days',
+                'estimated_ais_241_270_days', 'estimated_ais_271_300_days',
+                'estimated_ais_301_330_days', 'estimated_ais_331_365_days',
+                'estimated_ais_365_plus_days']
+            inv_age_cols = ['inv_age_0_to_30_days',
+                'inv_age_31_to_60_days', 'inv_age_61_to_90_days',
+                'inv_age_91_to_180_days', 'inv_age_181_to_270_days',
+                'inv_age_271_to_365_days', 'inv_age_365_plus_days',
+                'inv_age_181_to_330_days', 'inv_age_331_to_365_days']
+            
+            inv_columns = ['sku', 'asin', 'available', 'units_shipped_t7',
+                   'units_shipped_t30', 'units_shipped_t60', 'units_shipped_t90',
+                   'estimated_excess_quantity'] + inv_age_cols +[
+                   'estimated_storage_cost_next_month', 'inbound_quantity',
+                   'inbound_working', 'inbound_shipped', 'inbound_received',
+                   'reserved_quantity'] + overstock_cols + excess_fee_cols +[
+                   'Recommended_ship_in_quantity',
+                   'Recommended_ship_in_date','Inventory_Supply_at_FBA',
+                   'Reserved_FC_Transfer','Reserved_FC_Processing',
+                   'Reserved_Customer_Order','total_days_of_supply_with_open_shipments',
+                   'marketplace']
+            inv = self.stats['inventory_detailed'][inv_columns].copy()
+            inv_price = self.stats['inventory_detailed'][['sku', 'asin','your_price','marketplace']].copy()
+            inv = self.__attach_collection__(inv)
+            inv_price = self.__attach_collection__(inv_price)
+            self.__update_product__(inv)
 
-# skus = dataset.dictionary['sku'].unique().tolist()
-# # skus = dataset.dictionary[dataset.dictionary['collection']=='Microfiber Pillow Covers w/zipper']['sku'].unique().tolist()
+            for col in ('sku','asin'):
+                del inv[col]
+                del inv_price[col]
 
-# product = Product(dataset=dataset, sku=skus, start="2025-01-01", end="2025-12-31")
-# product.populate_loop()    
-    
-# self = product
+            inv = inv.groupby(['marketplace', 'collection', 'sub-collection', 'size', 'color']).agg('sum').reset_index()
+            inv_price = inv_price.groupby(['marketplace', 'collection', 'sub-collection', 'size', 'color']).agg('min').reset_index()
+            
+            total_inv = pd.merge(inv, inv_price, how='outer', on=['marketplace', 'collection', 'sub-collection', 'size', 'color'], validate='one_to_one')
+            total_inv['overstock_units'] = total_inv[overstock_cols].sum(axis=1)
+            total_inv['overstock_fees'] = total_inv[excess_fee_cols].sum(axis=1)
+            for col in (overstock_cols+excess_fee_cols+inv_age_cols):
+                del total_inv[col]
+            return total_inv
+            
+        def get_warehouse():
+            incoming = self.incoming_df.pivot_table(values='QtyOrdered', index='sku', columns='year-week', aggfunc='sum').reset_index()
+            # incoming['marketplace'] = 'US'
+            wh = self.warehouse_df[['sku', 'total_wh', 'QtyPhysical', 'total_receiving']].copy()
+            if wh['sku'].duplicated().sum() > 0:
+                raise BaseException('Check for duplicate SKUs in warehouse df')
+            wh['marketplace'] = 'US'
+            case_pack = self.fees_dimensions_df[['sku','sets in a box']].copy()
+            wh = pd.merge(wh, case_pack, how='left', on='sku', validate='one_to_one')
+            total_wh = pd.merge(wh, incoming, how='outer', on='sku', validate='one_to_one')
+            
+            dictionary = self.dataset.dictionary[
+                [
+                    'sku','collection', 'sub-collection','size', 'color','actuality', 'life stage', 'restockable'
+                    ]
+                ].drop_duplicates('sku').copy()
+            us_wh = pd.merge(total_wh, dictionary, how='left', on='sku', validate='one_to_one')
+            ca_wh = us_wh.copy()
+            ca_wh['marketplace'] = 'CA'
+            total_wh = pd.concat([us_wh, ca_wh])
+            return total_wh
+        
+        def calculate_shipment(result, warehouse):
+            wh_columns = warehouse.columns.tolist()
+            incoming_columns = [x for x in wh_columns if re.match('2[0-9]{3}-[0-9]{1,2}', x)]
+            to_ship = result[
+                ['marketplace', 'collection', 'sub-collection', 'size', 'color',
+                 long_term_average_sales,short_term_average_sales, 'average corrected',
+                 'dos available', 'dos inbound',
+                 'available','Inventory_Supply_at_FBA','estimated_excess_quantity']].fillna(0).copy()
+            to_ship = to_ship[to_ship['marketplace'].isin(['US','CA'])]
+            low_stock = result['dos available'] < 21
+            future_sales = to_ship['average corrected'] * stock_days
+            max_sales = to_ship['average corrected'] * max_days
+            
+            to_ship['to ship, units'] = future_sales - to_ship['Inventory_Supply_at_FBA']
+            to_ship.loc[low_stock, 'to ship, units'] = max_sales-to_ship['Inventory_Supply_at_FBA']
+            to_ship.loc[to_ship['to ship, units']<0, 'to ship, units']=0
+            
+            total = pd.merge(to_ship, warehouse, how='outer', on=['marketplace', 'collection', 'sub-collection', 'size', 'color'])
+            no_sales = (total['available']==0) & (total['average corrected'] == 0) & (total['total_wh']>0)
+            total.loc[no_sales, 'to ship, units']=1
+            
+            total = total[total['restockable'] != "Do not ship to Amazon"]
+            
+            total = total.sort_values(
+                ['marketplace', 'collection', 'sub-collection', 'size', 'color','Inventory_Supply_at_FBA','total_wh'],
+                ascending = [True,True,True,True,True,False,False]
+                )
+            duplicates = total[['marketplace', 'collection', 'sub-collection', 'size', 'color']].duplicated()
+            total.loc[duplicates, 'to ship, units'] = 0
+            if not include_empty:
+                total = total[(total['to ship, units']>0) & (total['to ship, units'].notnull())]
+            
+            total['to ship, units'] = ceil(total['to ship, units'])
+            total['to ship, boxes'] = total['to ship, units'] / total['sets in a box']            
+            total['to ship, boxes'] = ceil(total['to ship, boxes'])
+            
+            total['dos shipped'] = '=(Q:Q*P:P+M:M)/I:I'
+            
+            # total['dos shipped'] = (total['to ship, boxes'] * total['sets in a box'] + total['Inventory_Supply_at_FBA'])/total['average corrected']
+            duplicate_products = total[['marketplace', 'collection', 'size', 'color']].duplicated(keep=False)
+            total.loc[duplicate_products, 'potential duplicate'] ='caution, duplicate'
+            cols_reordered = [
+                'marketplace', 'collection', 'sub-collection', 'size', 'color','sku',
+                long_term_average_sales, short_term_average_sales, 'average corrected',
+                'dos available', 'dos inbound', 'available', 'Inventory_Supply_at_FBA',
+                'estimated_excess_quantity', 'to ship, units','sets in a box', 
+                'to ship, boxes', 'dos shipped', 'total_wh',
+                'QtyPhysical', 'total_receiving'] + incoming_columns + ['actuality', 'life stage', 'restockable',
+                'potential duplicate']
+            
+            total = total[cols_reordered]
+            return total
+            
+        
+        isr = get_product_isr()
+        sales = get_product_sales()
+        inventory = get_inventory()
+        warehouse = get_warehouse()
+        
+        
+        result = pd.merge(isr, sales, how='outer', on=['marketplace', 'collection', 'sub-collection', 'size', 'color'], validate='one_to_one')
+        result['isr'] = result['isr'].fillna(0)
+        result[long_term_average_sales] = (result[long_term_sales_col]/num_days/result['isr']).fillna(0)
+        result.loc[result['isr']<0.3, long_term_average_sales] = (result[long_term_sales_col]/num_days).fillna(0)
+        result[short_term_average_sales] = (result[short_term_sales_col]/two_weeks_days).fillna(0)
+        result.loc[result['isr']<0.3, short_term_average_sales] = (result[short_term_sales_col]/two_weeks_days).fillna(0)
+        
+        
+        avg1 = result[long_term_average_sales] * 0.3 + result[short_term_average_sales] * 0.7
+        avg2 = result[long_term_average_sales] * 0.7 + result[short_term_average_sales] * 0.3
+        
+        result['average corrected'] = pd.DataFrame(data={'avg1':avg1, 'avg2':avg2}).min(axis=1)
+        result = pd.merge(result, inventory, how='outer', on=['marketplace', 'collection', 'sub-collection', 'size', 'color'], validate='one_to_one')
+        result['dos available'] = result['available'].fillna(0) / result['average corrected']
+        result['dos inbound'] = result['Inventory_Supply_at_FBA'].fillna(0) / result['average corrected']
+        result = result.sort_values(['marketplace', 'collection', 'sub-collection', 'size', 'color'])
+        cols_ordered = [
+            'marketplace', 'collection', 'sub-collection', 'size', 'color', 'asin','sku',
+            long_term_sales_col, short_term_sales_col,'isr', long_term_average_sales,
+            short_term_average_sales, 'average corrected', 'available','Inventory_Supply_at_FBA',
+            'dos available','dos inbound','units_shipped_t7', 'units_shipped_t30', 'units_shipped_t60',
+            'units_shipped_t90', 'estimated_excess_quantity',
+            'estimated_storage_cost_next_month', 'inbound_quantity',
+            'inbound_working', 'inbound_shipped', 'inbound_received',
+            'reserved_quantity', 'Recommended_ship_in_quantity',
+            'Recommended_ship_in_date', 
+            'Reserved_FC_Transfer', 'Reserved_FC_Processing',
+            'Reserved_Customer_Order', 'total_days_of_supply_with_open_shipments',
+            'your_price', 'overstock_units', 'overstock_fees'
+            ]
+        result = self.__attach_ids__(result)
+        result = result[cols_ordered]
+        self.restock_summary = result.copy()
 
-# from connectors import gcloud as gc
-# client = gc.gcloud_connect()
-# import pandas_gbq
-
-# self.summarize()
-# summary = gc.normalize_columns(self.sales_summary)
-# pandas_gbq.to_gbq(summary, 'mellanni-project-da.auxillary_development.dashboard', if_exists='replace')
+        self.to_ship = calculate_shipment(result, warehouse)
+        
