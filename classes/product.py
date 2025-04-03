@@ -1052,14 +1052,15 @@ class Product:
             no_sales = (total['available']==0) & (total['average corrected'] == 0) & (total['total_wh']>0)
             total.loc[no_sales, 'to ship, units']=1
             
-            total = total[total['restockable'] != "Do not ship to Amazon"]
             
             total = total.sort_values(
                 ['marketplace', 'collection', 'sub-collection', 'size', 'color','Inventory_Supply_at_FBA','total_wh'],
                 ascending = [True,True,True,True,True,False,False]
                 )
-            duplicates = total[['marketplace', 'collection', 'sub-collection', 'size', 'color']].duplicated()
-            total.loc[duplicates, 'to ship, units'] = 0
+            # duplicates = total[['marketplace', 'collection', 'sub-collection', 'size', 'color']].duplicated()
+            total.loc[total['restockable'] == "Do not ship to Amazon", 'to ship, units'] = 0
+            total.loc[total['total_wh'] == 0, 'to ship, units'] = 0
+            # total.loc[duplicates, 'to ship, units'] = 0
             if not include_empty:
                 total = total[(total['to ship, units']>0) & (total['to ship, units'].notnull())]
             

@@ -57,7 +57,7 @@ class MainApp(ctk.CTk):
 
 
     def call_restock(self):
-        import restock
+        from scripts import restock
         self.after(200, self.destroy())
         restock.main()
 
