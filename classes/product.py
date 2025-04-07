@@ -1072,7 +1072,10 @@ class Product:
             
             # total['dos shipped'] = (total['to ship, boxes'] * total['sets in a box'] + total['Inventory_Supply_at_FBA'])/total['average corrected']
             duplicate_products = total[['marketplace', 'collection', 'size', 'color']].duplicated(keep=False)
-            total.loc[duplicate_products, 'potential duplicate'] ='caution, duplicate'
+            if len(duplicate_products) > 0:
+                total.loc[duplicate_products, 'potential duplicate'] ='caution, duplicate'
+            else:
+                total['potential duplicate'] = ""
             cols_reordered = [
                 'marketplace', 'collection', 'sub-collection', 'size', 'color','sku',
                 long_term_average_sales, short_term_average_sales, 'average corrected',
