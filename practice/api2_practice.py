@@ -13,7 +13,7 @@ openai_endpoint = "/responses"
 openai_headers = {"Content-Type": "application/json", "Authorization": f"Bearer {OPENAI_KEY}"} 
 openai_payload = {
     "model": "gpt-4o-mini",
-    "input": "I'm good. What's my name again?",
+    "input": "Who won the latest hockey world championship?",
     "tool_choice": "auto",
     "tools":[{ "type": "web_search_preview",
               "user_location": {
@@ -39,6 +39,12 @@ def calculate_price(response):
 # openai
 response = requests.post(url=openai_base_url+openai_endpoint, headers=openai_headers, data=json.dumps(openai_payload))
 # print(f'Response successful: {response.ok}\nResponse status: {response.status_code}\n{response.text}\n')
-print(response.json()['output'][0]['content'][0]['text'])
-print(f'Spent: ${calculate_price(response)}')
+if 'output' in response.json():
+    for chunk in response.json()['output']:
+        if 'content' in chunk:
+            for content in chunk['content']:
+                if 'text' in content:
+                    print(content['text'])
+# print(response.json()['output'][0]['content'][0]['text'])
+# print(f'Spent: ${calculate_price(response)}')
 
