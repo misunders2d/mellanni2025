@@ -15,6 +15,7 @@ openai
 pillow
 pinecone
 pyside6
+python-telegram-bot
 tkcalendar
 xlsxwriter
 
