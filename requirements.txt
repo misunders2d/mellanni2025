@@ -6,6 +6,7 @@ google-cloud
 google-cloud-storage
 google-cloud-bigquery-storage
 gspread
+fuzzywuzzy
 inflect
 matplotlib
 openpyxl
@@ -16,6 +17,7 @@ pillow
 pinecone
 pyside6
 python-telegram-bot
+python-Levenshtein
 tkcalendar
 xlsxwriter
 
