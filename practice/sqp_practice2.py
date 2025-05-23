@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 from typing import Literal, List
+from utils import mellanni_modules as mm
 
 folder = '/home/misunderstood/Documents/sqp' ## update folder path
 file_paths = [ ### update file paths
@@ -88,20 +89,91 @@ file_list = [pd.read_csv(os.path.join(folder, file), skiprows=1) for file in fil
 
 
 total_df = pd.concat(file_list)
+total_df['clicksXprice'] = total_df['Clicks: ASIN Count'] * total_df['Clicks: ASIN Price (Median)']
+total_df['atcXprice'] = total_df['Cart Adds: ASIN Count'] * total_df['Cart Adds: ASIN Price (Median)']
+total_df['purchaseXprice'] = total_df['Purchases: ASIN Count'] * total_df['Purchases: ASIN Price (Median)']
+
 sum_cols_asin = [
     'Impressions: ASIN Count','Clicks: ASIN Count',
     'Cart Adds: ASIN Count','Purchases: ASIN Count',
+    'clicksXprice','atcXprice','purchaseXprice'
+
     ]
 immutable_cols = [
     'Search Query Volume','Impressions: Total Count', 'Clicks: Total Count',
-    'Cart Adds: Total Count','Purchases: Total Count',
+    'Cart Adds: Total Count','Purchases: Total Count','Clicks: Price (Median)',
+    'Cart Adds: Price (Median)', 'Purchases: Price (Median)'
     ]
 
 asin_df = total_df.groupby('Search Query')[sum_cols_asin].agg('sum').reset_index()
 others_df = total_df.groupby('Search Query')[immutable_cols].agg('min').reset_index()
 
+
+#alternative method
+aggregation_schema = {
+    'Impressions: ASIN Count':'sum',
+    'Clicks: ASIN Count':'sum',
+    'Cart Adds: ASIN Count':'sum',
+    'Purchases: ASIN Count':'sum',
+    'Search Query Volume':'min',
+    'Impressions: Total Count':'min',
+    'Clicks: Total Count':'min',
+    'Cart Adds: Total Count':'min',
+    'Purchases: Total Count':'min',
+    
+    'clicksXprice':'sum',
+    'atcXprice':'sum',
+    'purchaseXprice':'sum',
+
+    
+    }
+alt_df = total_df.groupby('Search Query').agg(aggregation_schema).reset_index()
+
+
+alt_df['Clicks: ASIN Price (Median)'] = alt_df['clicksXprice'] / alt_df['Clicks: ASIN Count'] 
+alt_df['Cart Adds: ASIN Price (Median)'] = alt_df['atcXprice'] / alt_df['Cart Adds: ASIN Count']
+alt_df['Purchases: ASIN Price (Median)'] = alt_df['purchaseXprice'] / alt_df['Purchases: ASIN Count']
+# end of alternative method
+
+
 result = pd.merge(asin_df, others_df, how='outer', on = 'Search Query', validate = '1:1')
+result['Clicks: ASIN Price (Median)'] = result['clicksXprice'] / result['Clicks: ASIN Count'] 
+result['Cart Adds: ASIN Price (Median)'] = result['atcXprice'] / result['Cart Adds: ASIN Count']
+result['Purchases: ASIN Price (Median)'] = result['purchaseXprice'] / result['Purchases: ASIN Count']
+
+
+del_cols = ['clicksXprice','atcXprice','purchaseXprice']
+for column in del_cols:
+    del result[column]
+
 result = refine_file(result)
-result.to_excel('/home/misunderstood/temp/sqp_result.xlsx', index= False)
+
+
+result = result[['Search Query','Search Query Volume',
+                 'Impressions: Total Count','Impressions: ASIN Count',
+                 
+                 'Clicks: Total Count','Clicks: ASIN Count',
+                 'Cart Adds: Total Count','Cart Adds: ASIN Count',
+                 'Purchases: Total Count','Purchases: ASIN Count', 
+                 'Clicks: Price (Median)','Clicks: ASIN Price (Median)',
+                 'Cart Adds: Price (Median)','Cart Adds: ASIN Price (Median)',
+                 'Purchases: Price (Median)', 'Purchases: ASIN Price (Median)',
+                 
+                 'ASINs shown','ASINs glance rate',
+                 'KW ctr', 'ASIN ctr',
+                 'KW ATC %','ASINs ATC %',
+                 'KW ATC conversion', 'ASINs ATC conversion',
+                 'KW conversion', 'ASINs conversion']]
+
+# columns = [x for x in result.columns if 'Xprice' not in x]
+# result = result[columns]
+
+
+
+
+
+with pd.ExcelWriter('/home/misunderstood/temp/sqp_result.xlsx', engine = 'xlsxwriter') as writer:
+    result.to_excel(writer, index= False, sheet_name = 'result')
+    mm.format_header(result, writer, 'result')
 
 
