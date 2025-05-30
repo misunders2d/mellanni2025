@@ -5,8 +5,7 @@ Stages:
     1. Download data from Amazon - manually
     2. Upload data to local db - script
     3. Retrieve data from local db with conditions - script
-
-
+    4. Combine and calculate data
 
 Resources needed:
     - Sales including average sales: amazon orders report with history
