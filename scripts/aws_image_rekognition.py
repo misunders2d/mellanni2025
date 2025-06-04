@@ -130,6 +130,7 @@ def detect_and_draw_labels(photo): #updated process
 
     img_width, img_height = image.size
 
+    margin = 5
     for label in response['Labels']:
         for instance in label.get('Instances', []):
             bbox = instance['BoundingBox']
@@ -150,8 +151,10 @@ def detect_and_draw_labels(photo): #updated process
 
             # Draw label text
             label_text = f"{label['Name']} ({instance['Confidence']:.1f}%)"
-            text_x = left
-            text_y = top - 20 if top > 20 else top + height + 5
+            text_x = left +5
+            text_y = top + margin
+            margin += 20
+
             draw.text(
                 (text_x, text_y),
                 label_text,
@@ -167,11 +170,13 @@ def detect_and_draw_labels(photo): #updated process
 def main():
 
     file_paths = get_file_paths(img_path)
-    for photo in file_paths:
-        # label_count = detect_labels(photo, client, img_path)
-        detect_and_draw_labels(photo)
-    
-    mm.open_file_folder(out_folder)
-
+    if len(file_paths) > 0:
+        for photo in file_paths:
+            # label_count = detect_labels(photo, client, img_path)
+            detect_and_draw_labels(photo)
+        
+        mm.open_file_folder(out_folder)
+    else:
+        print('No images found in the selected folder. Please select a folder with images.')
 if __name__ == "__main__":
     main()

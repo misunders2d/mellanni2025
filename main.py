@@ -58,48 +58,48 @@ class MainApp(ctk.CTk):
     
     def call_image_rekognition(self):
         from scripts import aws_image_rekognition
-        self.after(200, self.destroy())
+        # self.after(200, self.destroy)
         aws_image_rekognition.main()
 
     def call_image_naming_check(self):
         from scripts import color_name_checker
-        self.after(200, self.destroy())
+        # self.after(200, self.destroy)
         color_name_checker.main()
 
     def call_flat_file_transfer(self):
         from scripts import new_template_transfer
-        self.after(200, self.destroy())
+        # self.after(200, self.destroy)
         new_template_transfer.main()
 
 
     def call_restock(self):
         from scripts import restock
-        self.after(200, self.destroy())
+        # self.after(200, self.destroy)
         restock.main()
 
     def call_price_checker(self):
         from scripts import price_checker
-        self.after(200, self.destroy())
+        # self.after(200, self.destroy)
         price_checker.main()
 
     def call_weekly_conversion(self):
         from scripts import weekly_conversion
-        self.after(200, self.destroy())
+        # self.after(200, self.destroy)
         weekly_conversion.main()
 
     def call_coupon_helper(self):
         from scripts import coupon_helper
-        self.after(200, self.destroy())
+        # self.after(200, self.destroy)
         coupon_helper.main()
 
     def call_check_titles(self):
         from scripts import check_titles
-        self.after(200, self.destroy())
+        # self.after(200, self.destroy)
         check_titles.main()
 
     def call_check_title_duplicates(self):
         from scripts import title_duplicates_checker
-        self.after(200, self.destroy())
+        # self.after(200, self.destroy)
         title_duplicates_checker.main()
         # title_duplicates_checker.run_custom_file()
 
