@@ -1,3 +1,4 @@
+boto3
 customtkinter
 db_dtypes
 gdown

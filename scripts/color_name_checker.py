@@ -14,7 +14,7 @@ def main():
         files,
         key=lambda x: (
             os.path.splitext(x)[0].split('_')[1],
-            os.path.splitext(x)[0].split('_')[-1])
+            os.path.splitext(x)[0].split('_')[2])
         )
 
     products = {}
@@ -23,7 +23,7 @@ def main():
     sorted_df = pd.DataFrame()
 
     for file in sorted_files:
-        product, color, size, _, market, position = os.path.splitext(file)[0].split('_')
+        product, color, size, position, _, market = os.path.splitext(file)[0].split('_')
         temp_row = pd.DataFrame(
             [[product, color, size, market, _, int(position), os.path.join(folder, file)]],
             columns = ['product', 'color', 'size', 'market', 'props', 'position', 'path']

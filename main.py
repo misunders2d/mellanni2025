@@ -43,6 +43,9 @@ class MainApp(ctk.CTk):
         self.image_naming_check_button = ctk.CTkButton(self.tools_frame, text='Check image names', command=self.call_image_naming_check)
         self.image_naming_check_button.grid(row=4, column=0, padx=self.xspacing, pady=self.yspacing)
 
+        self.image_rekognition_button = ctk.CTkButton(self.tools_frame, text='Image Rekognition', command=self.call_image_rekognition)
+        self.image_rekognition_button.grid(row=0, column=1, padx=self.xspacing, pady=self.yspacing)
+
         #bottom section
         self.update_button = ctk.CTkButton(self, text='Update', fg_color='gray', command=self.update)
         self.update_button.grid(row=3, column=0, pady=20)
@@ -53,6 +56,11 @@ class MainApp(ctk.CTk):
         subprocess.call(['git','pull', '-f'])
         subprocess.call(['pip','install','-r','requirements.txt'])
     
+    def call_image_rekognition(self):
+        from scripts import aws_image_rekognition
+        self.after(200, self.destroy())
+        aws_image_rekognition.main()
+
     def call_image_naming_check(self):
         from scripts import color_name_checker
         self.after(200, self.destroy())
