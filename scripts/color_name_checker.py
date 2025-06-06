@@ -14,7 +14,8 @@ def main():
         files,
         key=lambda x: (
             os.path.splitext(x)[0].split('_')[1],
-            os.path.splitext(x)[0].split('_')[2])
+            os.path.splitext(x)[0].split('_')[2],
+            os.path.splitext(x)[0].split('_')[3])
         )
 
     products = {}
