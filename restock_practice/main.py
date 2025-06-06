@@ -1,26 +1,14 @@
 import sqlite3
 import pandas as pd
+import os
 
+reports_dir = 'reports_data/'
+subfolders = ['fba_inventory','sales']
+print(f'Root dir (reports_data) exists? : {os.path.exists(reports_dir)}')
+for subfolder in subfolders:
+    subfolder_path = os.path.join(reports_dir, subfolder)
+    print(f'Subfolder {subfolder} exists? : {os.path.exists(subfolder_path)}')
+    if not os.path.exists(subfolder_path):
+        print(f'Creating subfolder: {subfolder_path}')
+        os.makedirs(subfolder_path, exist_ok=True)
 
-# how to check table names in a database
-# with sqlite3.connect('sales_Canada_practice.db') as conn:
-
-#     #1 alternative
-#     cursor = conn.cursor()
-#     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
-#     tables = cursor.fetchall()
-
-#     print('with Cursor: ', tables)
-
-#     #2 alternative
-#     result = pd.read_sql('SELECT name FROM sqlite_master WHERE type="table"', conn)
-
-#     print('with Pandas: ', result)
-
-
-# how to check data in a specific table
-
-with sqlite3.connect('sales_Canada_practice.db') as conn:
-    result = pd.read_sql('SELECT * FROM Sales LIMIT 10', conn)
-    print(result)
-    print(result.columns)
