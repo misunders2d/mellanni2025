@@ -1,21 +1,9 @@
 import sqlite3
 import pandas as pd
 import os
+from utils import check_folders, read_files
 
-def check_folders():
-    reports_dir = 'reports_data'
-    subfolders = ['fba_inventory','sales']
-    # print(f'Root dir (reports_data) exists? : {os.path.exists(reports_dir)}')
-    if not {os.path.exists(reports_dir)}:
-        return False
-    for subfolder in subfolders:
-        subfolder_path = os.path.join(reports_dir, subfolder)
-        # print(f'Subfolder {subfolder} exists? : {os.path.exists(subfolder_path)}')
-        if not os.path.exists(subfolder_path):
-            # print(f'Creating subfolder: {subfolder_path}')
-            # os.makedirs(subfolder_path, exist_ok=True)
-            return False
-    return True
+
 
 if not check_folders():
     print('Please create the reports_data folder and its subfolders (fba_inventory, sales) before running the script.')
@@ -23,25 +11,61 @@ if not check_folders():
 else:
     print('All required folders exist. Proceeding with the script...')
 
-def read_files(subfolder):
-    result = pd.DataFrame()
-    file_list = os.listdir(os.path.join('reports_data', subfolder))
-    for file in file_list:
-        if not file.endswith('.csv'):
-            print(f'Skipping non-CSV file: {file}')
-            continue
-        temp_file = pd.read_csv(os.path.join('reports_data', 'fba_inventory', file))
-        result = pd.concat([result, temp_file], axis=0, ignore_index=True)
-    return result
+
 
 inventory = read_files('fba_inventory')
-# sales = read_files('sales')
+sales = read_files('sales')
+
+def update_fba_inventory(df: pd.DataFrame):
+    dates_list = df['snapshot-date'].unique()
+
+    dates_list_str ='","'.join(dates_list)
+    try: 
+        delete_query = f"""
+                DELETE FROM fba_inventory
+                WHERE DATE("snapshot-date") IN ("{dates_list_str}")"""
+
+        with sqlite3.connect('restock_canada.db') as conn_delete:
+            cursor = conn_delete.cursor()
+            result = cursor.execute(delete_query)
+
+        print(f'Deleted: {result.rowcount} rows from fba_inventory')
+    except Exception as error:
+        print(f"This error while deleting data from fba inventory:\n{error}")
+
+    with sqlite3.connect('restock_canada.db') as connector:
+        df.to_sql('fba_inventory', connector, if_exists='append', index=False)
+
+    with sqlite3.connect('restock_canada.db') as connector:
+        result = pd.read_sql('select * from fba_inventory', connector)
+    print(f'Inventory dataframe shape is {result.shape}')
 
 
-with sqlite3.connect('restock_canada.db') as connector:
-    inventory.to_sql('fba_inventory', connector, if_exists='append', index=False)
+def update_sales(df: pd.DataFrame):
+    dates_list = [str(x.date()) for x in df['date'].unique().tolist()]
+    dates_list_str ='","'.join(dates_list)
 
-with sqlite3.connect('restock_canada.db') as conn:
-    db_data = pd.read_sql('SELECT * FROM fba_inventory', conn)
+    try:
+        delete_query = f"""
+                DELETE FROM sales
+                WHERE DATE(date) IN ("{dates_list_str}")"""
 
-print(db_data.shape)
+        with sqlite3.connect('restock_canada.db') as conn_delete:
+            cursor = conn_delete.cursor()
+            result = cursor.execute(delete_query)
+
+        print(f'Deleted: {result.rowcount} rows from fba_inventory')
+    except Exception as error:
+        print(f"This error while deleting data from sales:\n{error}")
+
+    with sqlite3.connect('restock_canada.db') as connector:
+        df.to_sql('sales', connector, if_exists='append', index=False)
+
+    with sqlite3.connect('restock_canada.db') as connector:
+        result = pd.read_sql('select * from sales', connector)
+    print(f'Sales dataframe shape is {result.shape}')
+
+
+
+update_fba_inventory(inventory)
+update_sales(sales)
