@@ -1,7 +1,7 @@
 import sqlite3
 import pandas as pd
 import os
-from utils import check_folders, read_files
+from utils_restock import check_folders, read_files
 
 
 
@@ -42,7 +42,7 @@ def update_fba_inventory(df: pd.DataFrame):
 
 
 def update_sales(df: pd.DataFrame):
-    dates_list = [str(x.date()) for x in df['date'].unique().tolist()]
+    dates_list = [str(pd.to_datetime(x).date()) for x in df['date'].unique().tolist()]
     dates_list_str ='","'.join(dates_list)
 
     try:
