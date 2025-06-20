@@ -71,5 +71,5 @@ def update_sales(df: pd.DataFrame):
 
 
 
-# update_fba_inventory(inventory)
-# update_sales(sales)
+update_fba_inventory(inventory)
+update_sales(sales)
