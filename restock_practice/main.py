@@ -4,7 +4,6 @@ import os
 from utils_restock import check_folders, read_files
 
 
-
 if not check_folders():
     print('Please create the reports_data folder and its subfolders (fba_inventory, sales) before running the script.')
     raise BaseException('Required folders are missing.')
@@ -15,6 +14,8 @@ else:
 
 inventory = read_files('fba_inventory')
 sales = read_files('sales')
+
+
 
 def update_fba_inventory(df: pd.DataFrame):
     dates_list = df['snapshot-date'].unique()
@@ -39,6 +40,7 @@ def update_fba_inventory(df: pd.DataFrame):
     with sqlite3.connect('restock_canada.db') as connector:
         result = pd.read_sql('select * from fba_inventory', connector)
     print(f'Inventory dataframe shape is {result.shape}')
+    print(result.columns)
 
 
 def update_sales(df: pd.DataFrame):
@@ -67,5 +69,7 @@ def update_sales(df: pd.DataFrame):
 
 
 
-update_fba_inventory(inventory)
-update_sales(sales)
+
+
+# update_fba_inventory(inventory)
+# update_sales(sales)
