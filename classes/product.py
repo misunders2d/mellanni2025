@@ -714,6 +714,8 @@ class Product:
             return changes
         
         def __summarize_non_product_ads__():
+            if not isinstance(self.dataset, Dataset):
+                raise BaseException("SBA not defined)")
             sba = self.dataset.sba[['date','cost','unitsSold14d','attributedSales14d', 'country_code']].groupby(
                 ['date','country_code']
                 ).agg('sum').reset_index()
@@ -909,7 +911,7 @@ class Product:
             )
         
     @error_checker
-    def restock(self, stock_days=49, max_days=90, include_empty = False):
+    def restock(self, stock_days=49, max_days=90, include_empty:int | str = 0):
         start, end, today = pd.to_datetime(self.start).date(), pd.to_datetime(self.end).date(), (pd.to_datetime('today')-pd.Timedelta(days=1)).date()
         two_weeks_back = (min(end,today) - pd.DateOffset(days=13)).date()
         

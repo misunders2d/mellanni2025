@@ -26,7 +26,7 @@ MARKET = "US"
 default_market_list = ["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES"]
 CHANNEL = None
 LOCAL = True
-SAVE = False
+SAVE = 0
 
 class Dataset:
     channels_mapping = {
@@ -43,7 +43,7 @@ class Dataset:
     }
     def __init__(self, start: str = START, end: str = END,
                  market: Literal["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES", "*"] | List[str] = MARKET,
-                 local_data: bool = LOCAL, save: bool = SAVE):
+                 local_data: bool = LOCAL, save: int | str = SAVE):
         self.client = gc.gcloud_connect()
         self.start = start
         self.end = end
