@@ -26,7 +26,7 @@ MARKET = "US"
 default_market_list = ["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES"]
 CHANNEL = None
 LOCAL = True
-SAVE = 0
+SAVE = False
 
 class Dataset:
     channels_mapping = {

@@ -178,6 +178,8 @@ def export_to_excel(df:pd.DataFrame, plot_buf:BytesIO, market, target=None) -> N
         workbook = writer.book
         perc_format = workbook.add_format({'num_format': '0.00%'})
         num_format = workbook.add_format({'num_format':'#,##0'})
+        red_format = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'num_format':'#,##0'})
+        green_format = workbook.add_format({'bg_color': "#00DF55", 'font_color': "#000000", 'num_format':'#,##0'})
         df.to_excel(writer, sheet_name='Weekly conversion', index=False)
         
         worksheet = writer.sheets['Weekly conversion']
@@ -193,6 +195,29 @@ def export_to_excel(df:pd.DataFrame, plot_buf:BytesIO, market, target=None) -> N
                 if not any([isinstance(value, pd._libs.missing.NAType), value == inf, pd.isna(value)]):
                     worksheet.write(cell+1, df.columns.tolist().index(col), value, num_format)
         
+        #apply green and red formats
+        session_cols = sorted([x for x in df.columns if 'sessions week' in x], reverse=True)
+        unit_cols = sorted([x for x in df.columns if 'units week' in x], reverse=True)
+        session_mask = df[session_cols[0]] > df[session_cols[1]]
+        unit_mask = df[unit_cols[0]] > df[unit_cols[1]]
+
+        # apply formats to sessions column
+        for cell, value in enumerate(df[session_cols[0]]):
+            if not any([isinstance(value, pd._libs.missing.NAType), value == inf, pd.isna(value)]):
+                if session_mask.iloc[cell]:
+                    worksheet.write(cell+1, df.columns.tolist().index(session_cols[0]), value, green_format)
+                else:
+                    worksheet.write(cell+1, df.columns.tolist().index(session_cols[0]), value, red_format)
+
+        # apply formats to units column
+        for cell, value in enumerate(df[unit_cols[0]]):
+            if not any([isinstance(value, pd._libs.missing.NAType), value == inf, pd.isna(value)]):
+                if unit_mask.iloc[cell]:
+                    worksheet.write(cell+1, df.columns.tolist().index(unit_cols[0]), value, green_format)
+                else:
+                    worksheet.write(cell+1, df.columns.tolist().index(unit_cols[0]), value, red_format)
+
+
         mm.format_header(df, writer, 'Weekly conversion')
         worksheet.insert_image('K2', 'plot.png', {'image_data': plot_buf})
         mm.open_file_folder(target)

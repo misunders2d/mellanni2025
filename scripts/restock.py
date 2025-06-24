@@ -206,8 +206,6 @@ class App(ctk.CTk):
         self.executor.submit(self.export_product)
 
     def export_product(self):
-        if not isinstance(self.dataset, pd.DataFrame):
-            raise BaseException("Dataset is not defined in the class")
         export_mode = 'stats' if self.mode_selector.get() else 'restock'
         selected_skus = [x for x in re.split(r'[,\n\r\t]+', self.skus_input.get(0.0, ctk.END).strip()) if x]
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
@@ -282,8 +280,6 @@ class App(ctk.CTk):
         open_file_folder(user_folder)
 
     def update_status(self):
-        if not isinstance(self.dataset, pd.DataFrame):
-            raise BaseException("Dataset is not defined in the class")
         total_time = time.perf_counter() - self.start
         self.progress.stop()
         self.status_label.configure(
@@ -300,8 +296,6 @@ class App(ctk.CTk):
             [self.collections.insert(tk.END, c) for c in collections]
 
     def __on_collection_select__(self, *args):
-        if not isinstance(self.dataset, pd.DataFrame):
-            raise BaseException("Dataset is not defined in the class")
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
         if selected_collections:
             potential_sizes = self.dataset.dictionary[self.dataset.dictionary['collection'].isin(selected_collections)]['size'].unique().tolist()
@@ -310,8 +304,6 @@ class App(ctk.CTk):
                 [self.sizes.insert(tk.END, ps) for ps in sorted(potential_sizes)]
 
     def __on_size_select__(self, *args):
-        if not isinstance(self.dataset, pd.DataFrame):
-            raise BaseException("Dataset is not defined in the class")
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
         selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
         if selected_sizes:
@@ -323,8 +315,6 @@ class App(ctk.CTk):
                 [self.colors.insert(tk.END, color) for color in sorted(potential_colors)]
 
     def __on_color_select__(self, *args):
-        if not isinstance(self.dataset, pd.DataFrame):
-            raise BaseException("Dataset is not defined in the class")
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
         selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
         selected_colors = [self.colors.get(x) for x in self.colors.curselection()]

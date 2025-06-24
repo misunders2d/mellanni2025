@@ -17,9 +17,9 @@ warnings.filterwarnings("ignore")
 class Product:
     dataset = None
     def __init__(self,
-                 asin:str|list=None,
-                 sku:str|list=None,
-                 dataset:Dataset=None,
+                 dataset:Dataset,
+                 asin:str|list="",
+                 sku:str|list="",
                  start="2025-01-01",
                  end="2025-12-31"):
         if not (asin or sku):
