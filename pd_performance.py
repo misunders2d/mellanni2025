@@ -1,13 +1,12 @@
 import pandas as pd
 from functools import reduce
 from classes.dataset import Dataset
-from common.events import event_dates
+from common.events import event_dates, event_dates_list
 
 
 if __name__ == "__main__":
-    event_dates_list = [date for daterange in event_dates.values() for date in daterange]
 
-    d = Dataset(start="2022-01-01", end="2025-12-31", market="US", local_data = True, save=False)
+    d = Dataset(start="2022-01-01", end="2025-12-31", market="US", local_data = False, save=True)
 
     d.pull_br_data()
     sales = d.br.copy()

@@ -22,7 +22,7 @@ def pull_sales(start: str, market: str, report:str='business') -> pd.DataFrame:
                     WHERE DATE(date) >= DATE("{start}")
                     AND country_code = "{market}"
                     """
-    elif report == 'business':
+    else: #report == 'business':
         query = f"""SELECT DATE(date) AS date, sku, childAsin AS asin, unitsOrdered AS units, sessions
                     FROM `reports.business_report`
                     WHERE DATE(date) >= DATE("{start}")
@@ -148,9 +148,9 @@ def plot_data(df:pd.DataFrame, num_weeks:int=2) -> BytesIO:
     ax1 = ax.twinx()
     ax1.plot(combined['reporting_week'], combined['conversion'], color='red')
     for week in weeks:
-        units=combined.loc[combined['reporting_week']==week, 'units'].values[0]
+        units=combined[combined['reporting_week']==week]['units'].values[0]
         ax.text(week, combined['units'].max(), f'{units:,.0f}\nunits', ha='center', va='center')
-        conversion=combined.loc[combined['reporting_week']==week,'conversion'].values[0]
+        conversion=combined[combined['reporting_week']==week]['conversion'].values[0]
         ax1.text(week, combined['conversion'].min(), f'{conversion:.2%}', ha='center', color='red')
     ax1.yaxis.set_major_formatter(PercentFormatter(1))
     ax.set_ylabel('Units sold')
@@ -176,23 +176,23 @@ def export_to_excel(df:pd.DataFrame, plot_buf:BytesIO, market, target=None) -> N
 
     with pd.ExcelWriter(file_name, engine='xlsxwriter') as writer:
         workbook = writer.book
-        perc_format = workbook.add_format({'num_format': '0.00%'})
-        num_format = workbook.add_format({'num_format':'#,##0'})
-        red_format = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'num_format':'#,##0'})
-        green_format = workbook.add_format({'bg_color': "#00DF55", 'font_color': "#000000", 'num_format':'#,##0'})
+        perc_format = workbook.add_format({'num_format': '0.00%'}) #type: ignore
+        num_format = workbook.add_format({'num_format':'#,##0'}) #type: ignore
+        red_format = workbook.add_format({'bg_color': '#FFC7CE', 'font_color': '#9C0006', 'num_format':'#,##0'}) #type: ignore
+        green_format = workbook.add_format({'bg_color': "#00DF55", 'font_color': "#000000", 'num_format':'#,##0'}) #type: ignore
         df.to_excel(writer, sheet_name='Weekly conversion', index=False)
         
         worksheet = writer.sheets['Weekly conversion']
         #apply percentage format
         for col in perc_cols:
             for cell, value in enumerate(df[col]):
-                if not any([isinstance(value, pd._libs.missing.NAType), value == inf, pd.isna(value)]):
+                if not any([value is pd.NA, value == inf, pd.isna(value)]):
                     worksheet.write(cell+1, df.columns.tolist().index(col), value, perc_format)
 
         #apply numeric format
         for col in num_cols:
             for cell, value in enumerate(df[col]):
-                if not any([isinstance(value, pd._libs.missing.NAType), value == inf, pd.isna(value)]):
+                if not any([value is pd.NA, value == inf, pd.isna(value)]):
                     worksheet.write(cell+1, df.columns.tolist().index(col), value, num_format)
         
         #apply green and red formats
@@ -203,7 +203,7 @@ def export_to_excel(df:pd.DataFrame, plot_buf:BytesIO, market, target=None) -> N
 
         # apply formats to sessions column
         for cell, value in enumerate(df[session_cols[0]]):
-            if not any([isinstance(value, pd._libs.missing.NAType), value == inf, pd.isna(value)]):
+            if not any([value is pd.NA, value == inf, pd.isna(value)]):
                 if session_mask.iloc[cell]:
                     worksheet.write(cell+1, df.columns.tolist().index(session_cols[0]), value, green_format)
                 else:
@@ -211,7 +211,7 @@ def export_to_excel(df:pd.DataFrame, plot_buf:BytesIO, market, target=None) -> N
 
         # apply formats to units column
         for cell, value in enumerate(df[unit_cols[0]]):
-            if not any([isinstance(value, pd._libs.missing.NAType), value == inf, pd.isna(value)]):
+            if not any([value is pd.NA, value == inf, pd.isna(value)]):
                 if unit_mask.iloc[cell]:
                     worksheet.write(cell+1, df.columns.tolist().index(unit_cols[0]), value, green_format)
                 else:
@@ -254,9 +254,9 @@ def process_data_threaded(start, market):
     for thread in threads:
         thread.join()
         
-    sales = results.get('sales')
-    dictionary = results.get('dictionary')
-    changes = results.get('changes')
+    sales = results.get('sales', pd.DataFrame())
+    dictionary = results.get('dictionary', pd.DataFrame())
+    changes = results.get('changes', pd.DataFrame())
     if any([sales is None,dictionary is None,changes is None]):
         raise BaseException('Dataframe can not be None')
     sales_refined = clean_sales(sales, dictionary)

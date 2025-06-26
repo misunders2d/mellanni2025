@@ -1,6 +1,3 @@
-# try:
-#     import fireducks.pandas as pd
-# except ImportError:
 import pandas as pd
 import pandas_gbq
 import os
@@ -21,7 +18,7 @@ if not os.path.exists(user_folder):
 import asyncio
 
 START = "2025-01-01"
-END = "2025-12-31"
+END = "2026-12-31"
 MARKET = "US"
 default_market_list = ["US", "CA", "GB", "UK", "MX", "FR", "DE", "IT", "ES"]
 CHANNEL = None
