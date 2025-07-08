@@ -412,7 +412,12 @@ class Dataset:
             shipment_item_ids = self.fba_shipments[['shipment_item_id','sku','sales_channel']].drop_duplicates()
             amazon_purchase_dates = self.fba_shipments[['amazon_order_id','pacific_date']].drop_duplicates()
             order_sales_data = self.fba_shipments[['shipment_item_id','units_sold','sales']].groupby('shipment_item_id').sum().reset_index()
-            pandas_gbq.to_gbq(shipment_item_ids, destination_table='auxillary_development.temp_shipment_ids', if_exists='replace')
+            pandas_gbq.to_gbq(
+                shipment_item_ids,
+                destination_table='mellanni-project-da.auxillary_development.temp_shipment_ids',
+                if_exists='replace',
+                credentials=gc.get_credentials()
+                )
 
             query = '''SELECT amazon_order_id, shipment_item_id, description, item_promotion_discount
                         FROM `reports.promotions`
@@ -444,7 +449,12 @@ class Dataset:
             if not isinstance(self.orders, pd.DataFrame):
                 self.pull_order_data()
             amazon_order_ids = pd.DataFrame(self.orders['amazon_order_id'].unique().tolist(), columns=['amazon_order_id'])
-            pandas_gbq.to_gbq(amazon_order_ids, destination_table='auxillary_development.temp_order_ids', if_exists='replace')
+            pandas_gbq.to_gbq(
+                amazon_order_ids,
+                destination_table='auxillary_development.temp_order_ids',
+                if_exists='replace',
+                credentials=gc.get_credentials()
+                )
 
             query = '''SELECT DATETIME(return_date, "America/Los_Angeles") as return_date,
                         order_id, sku, asin, quantity, detailed_disposition, reason, status, customer_comments, country_code

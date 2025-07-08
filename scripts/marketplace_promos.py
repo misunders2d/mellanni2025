@@ -45,5 +45,8 @@ def get_weekly_promos2(orders):
     weekly_promos = orders.groupby(['sales_channel', 'week'])[['sales', 'promo_discount']].agg('sum').reset_index()
     weekly_promos = weekly_promos.sort_values(by=['week', 'sales_channel'], ascending=[False, True])
     return weekly_promos
-    
-print(get_weekly_promos2(orders))
+
+
+def main():
+ 
+    print(get_weekly_promos2(orders))

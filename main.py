@@ -46,6 +46,9 @@ class MainApp(ctk.CTk):
         self.image_rekognition_button = ctk.CTkButton(self.tools_frame, text='Image Rekognition', command=self.call_image_rekognition)
         self.image_rekognition_button.grid(row=0, column=1, padx=self.xspacing, pady=self.yspacing)
 
+        self.marketplace_promos_button = ctk.CTkButton(self.tools_frame, text='Marketplace promos', command=self.call_marketplace_promos)
+        self.marketplace_promos_button.grid(row=1, column=1, padx=self.xspacing, pady=self.yspacing)
+
         #bottom section
         self.update_button = ctk.CTkButton(self, text='Update', fg_color='gray', command=self.update)
         self.update_button.grid(row=3, column=0, pady=20)
@@ -102,6 +105,11 @@ class MainApp(ctk.CTk):
         # self.after(200, self.destroy)
         title_duplicates_checker.main()
         # title_duplicates_checker.run_custom_file()
+
+    def call_marketplace_promos(self):
+        from scripts import marketplace_promos
+        # self.after(200, self.destroy)
+        marketplace_promos.main()
 
 if __name__ == '__main__':
     app = MainApp()
