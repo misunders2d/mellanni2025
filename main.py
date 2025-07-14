@@ -57,7 +57,7 @@ class MainApp(ctk.CTk):
         import subprocess
         subprocess.call(['git','restore','.'])
         subprocess.call(['git','pull', '-f'])
-        subprocess.call(['pip','install','-r','requirements.txt'])
+        subprocess.call(['pip','install','-r','requirements.txt','--upgrade'])
     
     def call_image_rekognition(self):
         from scripts import aws_image_rekognition
