@@ -47,6 +47,20 @@ def get_weekly_promos2(orders):
     return weekly_promos
 
 
+
+
 def main():
- 
-    print(get_weekly_promos2(orders))
+    weekly_promos_df = get_weekly_promos2(orders)
+    
+    output_dir = r'C:\Users\Bogdan\temp\dataset'
+    
+    # Create output directory if it doesn't exist
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+        
+    file_name = 'weekly_marketplace_promos.csv'
+    file_path = os.path.join(output_dir, file_name)
+    
+    weekly_promos_df.to_csv(file_path, index=False)
+    
+    print(f'Successfully saved the report to {file_path}')
