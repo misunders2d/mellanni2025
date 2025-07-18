@@ -28,8 +28,7 @@ def create_reporting_week(source_df):
     return df
 
 
-def main(events=False):
-    change_list = ['Price increase']
+def main(events=False, change_list = ['Price increase']):
     countries = ['US']
     # stats_columns = ['unitsOrdered', 'unitsOrderedB2B',
     #        'orderedProductSales','orderedProductSalesB2B',
@@ -59,14 +58,13 @@ def main(events=False):
     changes['date'] = pd.to_datetime(changes['date']).dt.date
 
     changes = changes[(changes['country_code'].isin(countries))&(changes['date']>=pd.to_datetime(d.start).date())]
-
-    changes = changes[changes['change_type'].isin(change_list)].copy()
+    if change_list:
+        changes = changes[changes['change_type'].isin(change_list)].copy()
     changes['change'] = np.where(
         changes['notes'].astype(str).str.strip() != 'nan',
         changes['change_type'] + ' : ' + changes['notes'],
         changes['change_type']
         )
-
     changes = pd.merge(changes, dictionary, how = 'left', on = 'sku', validate='m:1')
     changes = changes.dropna(subset='collection')
     changes = create_reporting_week(changes)
@@ -75,9 +73,12 @@ def main(events=False):
         ['reporting week','asin','collection', 'size', 'color']
         )['change'].agg(lambda x: ' | '.join(x.unique())).reset_index()
 
+    if change_list:
+        price_asins = changes['asin'].unique().tolist()
+        sales_asins = sales[sales['asin'].isin(price_asins)].copy()
+    else:
+        sales_asins = sales.copy()
 
-    price_asins = changes['asin'].unique().tolist()
-    sales_asins = sales[sales['asin'].isin(price_asins)].copy()
     sales_asins = create_reporting_week(sales_asins)
     sales_asins = pd.merge(sales_asins, dictionary, how = 'left', on = 'asin', validate='m:1')
 
@@ -149,6 +150,6 @@ def main(events=False):
 if __name__ == "__main__":
     include_events = input('Include events? (yes/no): ').strip().lower()
     if include_events == 'yes':
-        main(events=True)
+        main(events=True, change_list = [])
     else:
         main(events=False)
