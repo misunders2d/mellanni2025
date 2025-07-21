@@ -407,8 +407,11 @@ class Dataset:
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, 'promotions.csv'))
         else:
-            if not self.fba_shipments:
+            if not isinstance(self.fba_shipments, pd.DataFrame):
                 self.pull_fba_shipments_data()
+            if not isinstance(self.fba_shipments, pd.DataFrame):
+                PopupError("FBA Shipments data not found. Please pull FBA Shipments data first.")
+                raise BaseException('FBA Shipments data not found.')
             shipment_item_ids = self.fba_shipments[['shipment_item_id','sku','sales_channel']].drop_duplicates()
             amazon_purchase_dates = self.fba_shipments[['amazon_order_id','pacific_date']].drop_duplicates()
             order_sales_data = self.fba_shipments[['shipment_item_id','units_sold','sales']].groupby('shipment_item_id').sum().reset_index()
@@ -448,6 +451,9 @@ class Dataset:
         else:
             if not isinstance(self.orders, pd.DataFrame):
                 self.pull_order_data()
+            if not isinstance(self.orders, pd.DataFrame):
+                PopupError("Orders data not found. Please pull Orders data first.")
+                raise BaseException('Orders data not found.')
             amazon_order_ids = pd.DataFrame(self.orders['amazon_order_id'].unique().tolist(), columns=['amazon_order_id'])
             pandas_gbq.to_gbq(
                 amazon_order_ids,
@@ -475,7 +481,7 @@ class Dataset:
             fees = self.__read_local__(os.path.join(user_folder, 'fees.csv'))
         else:
             fees = size_match.main(out=False)
-            if self.save:
+            if self.save and isinstance(fees, pd.DataFrame):
                 fees.to_csv(os.path.join(user_folder, 'fees.csv'), index=False)
         self.fees = fees
     
