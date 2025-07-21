@@ -27,19 +27,21 @@ ctk.set_appearance_mode('dark')
 ctk.set_default_color_theme('blue')
 
 class App(ctk.CTk):
-    def __init__(self, width=1080, height=720):
+    def __init__(self):
         super().__init__()
         self.title('Restock')
-        self.geometry(f'{width}x{height}')
+        width = self.winfo_screenwidth()
+        height = self.winfo_screenheight()
+        self.geometry(f'{width}x{height}+0+0')
         self.executor = ThreadPoolExecutor()
         self.markets = []
         self.dataset = None
         self.run_params = {}
         
         # top frame ##################################
-        self.controls_frame = ctk.CTkFrame(self, width = width, height=110)
+        self.controls_frame = ctk.CTkFrame(self, height=110)
         self.controls_frame.grid_propagate(False)
-        self.controls_frame.pack()
+        self.controls_frame.pack(side='top', fill='x')
         #dates
         self.start_date_label = ctk.CTkLabel(self.controls_frame, text='Start date')
         self.start_date_label.grid(row=0, column=0, padx = 10, pady=10)
@@ -89,10 +91,20 @@ class App(ctk.CTk):
         
         self.dataset_button.grid(row=0, column = len(self.markets)//2 + 4, rowspan = 2)
 
+        # bottom frame ####################################
+        self.bottom_frame = ctk.CTkFrame(self, height=100)
+        self.bottom_frame.pack_propagate(False)
+        self.bottom_frame.pack(side='bottom', fill='x')
+        self.status_label = ctk.CTkLabel(self.bottom_frame, text='', pady=10)
+        self.status_label.pack()
+        self.progress = ctk.CTkProgressBar(self.bottom_frame, mode='indeterminate')
+        self.progress.pack(fill='x', padx=10)
+
         # mid frame ########################################
-        self.mid_frame = ctk.CTkFrame(self, width=width, height=550)
+        self.mid_frame = ctk.CTkFrame(self)
         self.mid_frame.grid_propagate(False)
-        self.mid_frame.pack(pady=10)
+        self.mid_frame.pack(side='top', fill='both', expand=True, pady=10)
+        self.mid_frame.columnconfigure(3, weight=1)
 
         self.partial_update_label = ctk.CTkLabel(self.mid_frame, text='Update specific part')
         self.partial_update_label.grid(row=0, column=0, pady=(0, 10), padx=10, sticky='n')
@@ -171,8 +183,8 @@ class App(ctk.CTk):
 
         self.skus_label = ctk.CTkLabel(self.mid_frame, text='SKU/ASIN search')
         self.skus_label.grid(row=1, column=3)
-        self.skus_input = ctk.CTkTextbox(self.mid_frame, height=400)
-        self.skus_input.grid(row=2, column=3,columnspan=2, rowspan=3, sticky='n', padx=5)
+        self.skus_input = ctk.CTkTextbox(self.mid_frame)
+        self.skus_input.grid(row=2, column=3,columnspan=2, rowspan=3, sticky='nsew', padx=5)
 
         self.product_button = ctk.CTkButton(
             self.mid_frame,
@@ -192,16 +204,6 @@ class App(ctk.CTk):
         self.product_date_to.insert(0, end_date)
         self.product_date_to.grid(row=0, column=4)
 
-
-        # bottom frame ####################################
-        self.bottom_frame = ctk.CTkFrame(self, width=width, height=100)
-        self.bottom_frame.pack_propagate(False)
-        self.bottom_frame.pack()
-        self.status_label = ctk.CTkLabel(self.bottom_frame, text='', pady=10)
-        self.status_label.pack()
-        self.progress = ctk.CTkProgressBar(self.bottom_frame, width=int(width*0.8), mode='indeterminate')
-        self.progress.pack()
-
     def run_product_export(self):
         self.executor.submit(self.export_product)
 
@@ -211,6 +213,8 @@ class App(ctk.CTk):
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
         selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
         selected_colors = [self.colors.get(x) for x in self.colors.curselection()]
+        if not self.dataset:
+            raise BaseException('Dataset not loaded, please load dataset first')
         selected_asins = self.dataset.dictionary[
             (self.dataset.dictionary['collection'].isin(selected_collections))
             &
@@ -280,6 +284,8 @@ class App(ctk.CTk):
         open_file_folder(user_folder)
 
     def update_status(self):
+        if not isinstance(self.dataset, Dataset):
+            raise BaseException('Dataset not loaded, please load dataset first')
         total_time = time.perf_counter() - self.start
         self.progress.stop()
         self.status_label.configure(
@@ -296,6 +302,8 @@ class App(ctk.CTk):
             [self.collections.insert(tk.END, c) for c in collections]
 
     def __on_collection_select__(self, *args):
+        if not isinstance(self.dataset, Dataset):
+            raise BaseException('Dataset not loaded, please load dataset first')
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
         if selected_collections:
             potential_sizes = self.dataset.dictionary[self.dataset.dictionary['collection'].isin(selected_collections)]['size'].unique().tolist()
@@ -304,6 +312,8 @@ class App(ctk.CTk):
                 [self.sizes.insert(tk.END, ps) for ps in sorted(potential_sizes)]
 
     def __on_size_select__(self, *args):
+        if not isinstance(self.dataset, Dataset):
+            raise BaseException('Dataset not loaded, please load dataset first')
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
         selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
         if selected_sizes:
@@ -315,6 +325,8 @@ class App(ctk.CTk):
                 [self.colors.insert(tk.END, color) for color in sorted(potential_colors)]
 
     def __on_color_select__(self, *args):
+        if not isinstance(self.dataset, Dataset):
+            raise BaseException('Dataset not loaded, please load dataset first')
         selected_collections = [self.collections.get(x) for x in self.collections.curselection()]
         selected_sizes = [self.sizes.get(x) for x in self.sizes.curselection()]
         selected_colors = [self.colors.get(x) for x in self.colors.curselection()]
