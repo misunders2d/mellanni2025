@@ -23,6 +23,7 @@ def calculate_inventory_isr(inventory):
     asin_isr = inventory_grouped.groupby('asin')[['in_stock?']].agg('mean').reset_index()
     return asin_isr, total_days
 
+
 def get_asin_sales(sales, total_day):
     sales_filtered = sales[sales['sku'].str.endswith('-CA')][['date','(child)_asin','units_ordered','sessions_-_total']].copy()
     sales_daily = sales_filtered.groupby(['date','(child)_asin']).agg('sum').reset_index()
@@ -39,3 +40,7 @@ def main():
     result = pd.merge(asin_isr, total_sales, on='asin', how='outer')
     result['average_corrected'] = result['average_daily_units'] / result['in_stock?']
     result.to_excel(os.path.join(user_folder, 'inventory_restock.xlsx'), index=False)
+
+
+if __name__ == "__main__":
+    main()

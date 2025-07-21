@@ -708,6 +708,7 @@ class Product:
                         else row['notes'],
                 axis=1)
             changes = self.__attach_collection__(changes)
+            changes['changes'] = changes['changes'].astype('str').replace('nan','')
             changes = changes.groupby(
                 ['date','marketplace','collection','sub-collection','size','color']
                 )['changes'].agg(lambda x: ' | '.join(x.unique().tolist())).reset_index()
