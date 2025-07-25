@@ -24,9 +24,33 @@ def calculate_inventory_isr(inventory):
     return asin_isr, total_days
 
 
+def fill_dates(df:pd.DataFrame):
+    df['date'] = pd.to_datetime(df['date'])
+    df = df[['date','(child)_asin','units_ordered','sessions_-_total']]
+    start_date = df['date'].min()
+    end_date = df['date'].max()
+    date_range = pd.date_range(start=start_date, end=end_date)
+    full_dates = pd.DataFrame(date_range, columns=['date'])
+    asin_list = df['(child)_asin'].unique()
+    
+    # result = pd.DataFrame()
+    all_files = []
+    for asin in asin_list:
+        temp_df = df[df['(child)_asin']==asin]
+        full_asin = pd.merge(full_dates, temp_df, how = 'left', on = 'date')
+        full_asin['(child)_asin']=asin
+        all_files.append(full_asin)
+    result = pd.concat(all_files)
+    result = result.fillna(0)
+    # result.to_clipboard(index=False)
+
 def get_asin_sales(sales, total_day):
     sales_filtered = sales[sales['sku'].str.endswith('-CA')][['date','(child)_asin','units_ordered','sessions_-_total']].copy()
     sales_daily = sales_filtered.groupby(['date','(child)_asin']).agg('sum').reset_index()
+    #remove later
+    sales_daily.to_clipboard(index=False)
+
+
     total_sales = sales_daily.groupby('(child)_asin')[['units_ordered','sessions_-_total']].agg('sum').reset_index()
     total_sales['average_daily_units'] = total_sales['units_ordered'] / total_day
     total_sales['average_daily_sessions'] = total_sales['sessions_-_total'] / total_day

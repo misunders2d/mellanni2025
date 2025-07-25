@@ -150,6 +150,6 @@ def main(events=False, change_list = ['Price increase']):
 if __name__ == "__main__":
     include_events = input('Include events? (yes/no): ').strip().lower()
     if include_events == 'yes':
-        main(events=True, change_list = [])
+        main(events=True)#, change_list = [])
     else:
         main(events=False)
