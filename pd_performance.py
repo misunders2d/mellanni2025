@@ -6,7 +6,7 @@ from common.events import event_dates, event_dates_list
 
 if __name__ == "__main__":
 
-    d = Dataset(start="2022-01-01", end="2025-12-31", market="US", local_data = False, save=True)
+    d = Dataset(start="2022-01-01", end="2025-12-31", market="US", local_data = True, save=False)
 
     d.pull_br_data()
     sales = d.br.copy()
@@ -18,9 +18,11 @@ if __name__ == "__main__":
     final = pd.DataFrame(columns=['sku'])
 
     for event, dates in event_dates.items():
+        days = 60
         event_name = event
-        pre_event_sales = non_event_sales[non_event_sales['date'].between(dates[0]-pd.Timedelta(days=61), dates[0]-pd.Timedelta(days=1))]
-        sku_pre_event_average = pre_event_sales.groupby('sku')['unitsOrdered'].agg('mean').reset_index()
+        pre_event_sales = non_event_sales[non_event_sales['date'].between(dates[0]-pd.Timedelta(days=days+1), dates[0]-pd.Timedelta(days=1))]
+        sku_pre_event_average = pre_event_sales.groupby('sku')['unitsOrdered'].agg('sum').reset_index()
+        sku_pre_event_average['unitsOrdered'] = sku_pre_event_average['unitsOrdered']/days
         sku_pre_event_average = sku_pre_event_average.rename(columns = {'unitsOrdered':f'pre-{event_name} avg units'})
 
         specific_event_sales = event_sales[event_sales['date'].isin(dates)]

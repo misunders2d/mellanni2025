@@ -114,7 +114,7 @@ class Product:
 
     def __attach_ids__(self, df):
         if not all([x in df.columns.tolist() for x in ('collection','sub-collection','size','color','marketplace')]):
-            return
+            raise BaseException("wrong file submitted")
         all_rows = []
         for i, row in df.iterrows():
             product = tuple(row[['collection','sub-collection','size','color','marketplace']].values.tolist())
@@ -549,7 +549,10 @@ class Product:
                 self.restock()    
             
             mm.export_to_excel(
-                [self.restock_summary, self.to_ship], ['restock', 'to ship'], filename='restock.xlsx', out_folder=user_folder
+                [self.restock_summary, self.to_ship, self.wh_situation],
+                ['restock', 'to ship', 'warehouse'],
+                filename='restock.xlsx',
+                out_folder=user_folder
                 )
                 
         mm.open_file_folder(os.path.dirname(file_path_stats))
@@ -1035,6 +1038,10 @@ class Product:
             return total_wh
         
         def calculate_shipment(result, warehouse):
+            if not self.dataset:
+                raise BaseException("Dictionary not defined for the product")
+            dictionary = self.dataset.dictionary[['sku','asin']]
+            dictionary = dictionary.drop_duplicates(['sku','asin'])
             wh_columns = warehouse.columns.tolist()
             incoming_columns = [x for x in wh_columns if re.match('2[0-9]{3}-[0-9]{1,2}', x)]
             to_ship = result[
@@ -1072,6 +1079,9 @@ class Product:
             total['to ship, boxes'] = ceil(total['to ship, boxes'])
             
             total['dos shipped'] = '=(Q:Q*P:P+M:M)/I:I'
+
+            total = total.dropna(subset='sku')
+            total = pd.merge(total, dictionary, how = 'left', on = 'sku', validate='m:1')
             
             # total['dos shipped'] = (total['to ship, boxes'] * total['sets in a box'] + total['Inventory_Supply_at_FBA'])/total['average corrected']
             duplicate_products = total[['marketplace', 'collection', 'size', 'color']].duplicated(keep=False)
@@ -1080,7 +1090,7 @@ class Product:
             else:
                 total['potential duplicate'] = ""
             cols_reordered = [
-                'marketplace', 'collection', 'sub-collection', 'size', 'color','sku',
+                'marketplace', 'collection', 'sub-collection', 'size', 'color','sku','asin',
                 long_term_average_sales, short_term_average_sales, 'average corrected',
                 'dos available', 'dos inbound', 'available', 'Inventory_Supply_at_FBA',
                 'estimated_excess_quantity', 'to ship, units','sets in a box', 
@@ -1133,4 +1143,11 @@ class Product:
         self.restock_summary = result.copy()
 
         self.to_ship = calculate_shipment(result, warehouse)
-        
+
+        container_weeks = [x for x in self.to_ship.columns if re.match(r"[0-9]{4}-[0-9]{1,2}", str(x))]
+        inv_columns = ['total_wh','total_receiving'] + container_weeks
+        wh_situation = self.to_ship.copy()
+        wh_situation = wh_situation[wh_situation['marketplace'].isin(['US',nan])]
+        self.wh_situation = wh_situation.groupby(
+            ['collection','size','color','asin']
+            )[inv_columns].agg('sum').reset_index()
