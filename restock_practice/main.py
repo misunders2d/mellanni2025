@@ -44,16 +44,39 @@ def fill_dates(df:pd.DataFrame):
     result = result.fillna(0)
     # result.to_clipboard(index=False)
 
+def last_2_weeks_sales(df_sales:pd.DataFrame, df_inventory:pd.DataFrame):
+    df_sales['date'] = pd.to_datetime(df_sales['date'])
+    df_inventory = df_inventory.rename(columns={'snapshot-date': 'date', 'asin':'(child)_asin'})
+    df_inventory['date'] = pd.to_datetime(df_inventory['date'])
+    last_date = df_sales['date'].max()
+    cut_off_date = last_date - pd.Timedelta(days=13)
+    latest_sales = df_sales[df_sales['date'] >= cut_off_date]
+    latest_inventory = df_inventory[df_inventory['date'] >= cut_off_date]
+    latest_inventory = latest_inventory.groupby(['date','(child)_asin'])[['inventory_supply_at_fba']].agg('sum').reset_index()
+    latest_inventory['in_stock?'] = latest_inventory['inventory_supply_at_fba'] > 0
+    latest_isr = latest_inventory.groupby('(child)_asin')[['in_stock?']].agg('mean').reset_index()
+    latest_sales = latest_sales.groupby('(child)_asin')[['units_ordered','sessions_-_total']].agg('sum').reset_index()
+    latest_sales = pd.merge(latest_sales, latest_isr, on='(child)_asin', how='outer')
+    # latest_sales = latest_sales.rename(columns={'(child)_asin': 'asin'})
+    latest_sales['average_2_weeks_units'] = latest_sales['units_ordered'] / 14
+    latest_sales['average_2_weeks_sessions'] = latest_sales['sessions_-_total'] / 14
+    latest_sales['average_2_weeks_units_corrected'] = latest_sales['average_2_weeks_units'] / latest_sales['in_stock?']
+    return latest_sales[['(child)_asin','average_2_weeks_units_corrected', 'average_2_weeks_sessions']]
+
+
+
 def get_asin_sales(sales, total_day):
     sales_filtered = sales[sales['sku'].str.endswith('-CA')][['date','(child)_asin','units_ordered','sessions_-_total']].copy()
     sales_daily = sales_filtered.groupby(['date','(child)_asin']).agg('sum').reset_index()
     #remove later
-    sales_daily.to_clipboard(index=False)
+    # sales_daily.to_clipboard(index=False)
+    latest_sales = last_2_weeks_sales(sales, inv)
 
 
     total_sales = sales_daily.groupby('(child)_asin')[['units_ordered','sessions_-_total']].agg('sum').reset_index()
     total_sales['average_daily_units'] = total_sales['units_ordered'] / total_day
     total_sales['average_daily_sessions'] = total_sales['sessions_-_total'] / total_day
+    total_sales = pd.merge(total_sales, latest_sales, on='(child)_asin', how='outer')
     total_sales = total_sales.rename(columns={'(child)_asin': 'asin'})
     return total_sales
 
@@ -62,7 +85,11 @@ def main():
     asin_isr, total_day = calculate_inventory_isr(inv[['snapshot-date', 'sku', 'asin', 'inventory_supply_at_fba']].copy())
     total_sales = get_asin_sales(sales, total_day)
     result = pd.merge(asin_isr, total_sales, on='asin', how='outer')
-    result['average_corrected'] = result['average_daily_units'] / result['in_stock?']
+    result['average_corrected_long'] = result['average_daily_units'] / result['in_stock?']
+    result['average_corrected_long'] = result['average_corrected_long'].fillna(0)
+    result['average_2_weeks_units_corrected'] = result['average_2_weeks_units_corrected'].fillna(0)
+    # result['average_corrected'] = result[['average_corrected_long','average_2_weeks_units_corrected']].mean(axis=1) #use `axis = ` to specify the direction of the mean calculation (rows)
+    result['average_corrected'] = result['average_corrected_long']*0.4 + result['average_2_weeks_units_corrected'] *0.6
     result.to_excel(os.path.join(user_folder, 'inventory_restock.xlsx'), index=False)
 
 
