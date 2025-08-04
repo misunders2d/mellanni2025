@@ -1078,7 +1078,7 @@ class Product:
             total['to ship, boxes'] = total['to ship, units'] / total['sets in a box']            
             total['to ship, boxes'] = ceil(total['to ship, boxes'])
             
-            total['dos shipped'] = '=(Q:Q*P:P+M:M)/I:I'
+            total['dos shipped'] = '=(R:R*Q:Q+N:N)/J:J'
 
             total = total.dropna(subset='sku')
             total = pd.merge(total, dictionary, how = 'left', on = 'sku', validate='m:1')
