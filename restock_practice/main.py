@@ -3,6 +3,7 @@ import pandas as pd
 import sqlite3
 from common import user_folder
 import os
+from utils import mellanni_modules as mm
 
 start_date = pd.to_datetime("today").date() - pd.Timedelta(days=181)
 start_date = (
@@ -135,7 +136,10 @@ def main():
         result["average_corrected_long"] * 0.4
         + result["average_2_weeks_units_corrected"] * 0.6
     )
-    result.to_excel(os.path.join(user_folder, "inventory_restock.xlsx"), index=False)
+
+    mm.export_to_excel([result, total_sales],['restock_practice', 'sales'], 'test_restock.xlsx')
+
+    # result.to_excel(os.path.join(user_folder, "inventory_restock.xlsx"), index=False)
 
 
 if __name__ == "__main__":
