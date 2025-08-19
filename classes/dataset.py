@@ -493,9 +493,9 @@ class Dataset:
         else:
             query = f"""
                     SELECT date, ProductID as sku, QtyAvailable, QtyPhysical, BinType, Sellable, BinName
-                    FROM `mellanni-project-da.sellercloud.inventory_bins`
+                    FROM `mellanni-project-da.sellercloud.inventory_bins_partitioned`
                     WHERE DATE(date)=(
-                        SELECT DATE(MAX(date)) FROM `mellanni-project-da.sellercloud.inventory_bins`
+                        SELECT DATE(MAX(date)) FROM `mellanni-project-da.sellercloud.inventory_bins_partitioned`
                         WHERE DATE(date) <= DATE("{self.end}")
                     )
                     """
