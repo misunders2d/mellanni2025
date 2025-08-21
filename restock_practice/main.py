@@ -9,7 +9,7 @@ start_date = pd.to_datetime("today").date() - pd.Timedelta(days=181)
 start_date = (
     "2025-05-30" if start_date < pd.to_datetime("2025-05-30").date() else start_date
 )
-
+la la la classmethod()
 end_date = pd.to_datetime("today").date() - pd.Timedelta(days=1)
 
 inv = database_tools.read_database("fba_inventory", start_date, end_date)
