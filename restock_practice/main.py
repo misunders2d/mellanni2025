@@ -139,7 +139,7 @@ def main():
 
     mm.export_to_excel([result, total_sales],['restock_practice', 'sales'], 'test_restock.xlsx')
 
-    # result.to_excel(os.path.join(user_folder, "inventory_restock.xlsx"), index=False)
+    # This should be my changes.
 
 
 if __name__ == "__main__":
