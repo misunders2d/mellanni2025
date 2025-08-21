@@ -139,7 +139,7 @@ def main():
 
     mm.export_to_excel([result, total_sales],['restock_practice', 'sales'], 'test_restock.xlsx')
 
-    # This should be my changes.
+    # This should be my changes2.
 
 
 if __name__ == "__main__":
