@@ -111,6 +111,12 @@ def get_asin_sales(sales, total_day):
         .agg("sum")
         .reset_index()
     )
+    total_sales["conversion"] = total_sales.apply(
+        lambda row: row["sessions_-_total"] / row["units_ordered"]
+        if row["units_ordered"] != 0
+        else 0,
+        axis=1,
+    )
     total_sales["average_daily_units"] = total_sales["units_ordered"] / total_day
     total_sales["average_daily_sessions"] = total_sales["sessions_-_total"] / total_day
     total_sales = pd.merge(total_sales, latest_sales, on="(child)_asin", how="outer")
