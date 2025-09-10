@@ -1,10 +1,33 @@
 import sys
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
-                               QPushButton, QLabel, QLineEdit, QCheckBox, QRadioButton, 
-                               QComboBox, QSpinBox, QDoubleSpinBox, QSlider, QProgressBar, 
-                               QListWidget, QTextEdit, QGroupBox, QTabWidget, QToolButton, 
-                               QCalendarWidget, QDateEdit, QTimeEdit, QDial, QScrollArea)
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QPushButton,
+    QLabel,
+    QLineEdit,
+    QCheckBox,
+    QRadioButton,
+    QComboBox,
+    QSpinBox,
+    QDoubleSpinBox,
+    QSlider,
+    QProgressBar,
+    QListWidget,
+    QTextEdit,
+    QGroupBox,
+    QTabWidget,
+    QToolButton,
+    QCalendarWidget,
+    QDateEdit,
+    QTimeEdit,
+    QDial,
+    QScrollArea,
+)
 from PySide6.QtCore import Qt
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -15,7 +38,9 @@ class MainWindow(QMainWindow):
         # Main widget and layout
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        main_layout = QHBoxLayout(main_widget)  # Horizontal layout to split into columns
+        main_layout = QHBoxLayout(
+            main_widget
+        )  # Horizontal layout to split into columns
 
         # Left column layout
         left_layout = QVBoxLayout()
@@ -47,7 +72,9 @@ class MainWindow(QMainWindow):
 
         # QCheckBox: Toggleable checkbox
         checkbox = QCheckBox("Enable Feature")
-        checkbox.stateChanged.connect(lambda state: label.setText("Checked" if state else "Unchecked"))
+        checkbox.stateChanged.connect(
+            lambda state: label.setText("Checked" if state else "Unchecked")
+        )
         left_layout.addWidget(checkbox)
 
         # QRadioButton: Exclusive radio button group
@@ -63,7 +90,9 @@ class MainWindow(QMainWindow):
         # QComboBox: Dropdown menu
         combo = QComboBox()
         combo.addItems(["Choice A", "Choice B", "Choice C"])
-        combo.currentTextChanged.connect(lambda text: label.setText(f"Selected: {text}"))
+        combo.currentTextChanged.connect(
+            lambda text: label.setText(f"Selected: {text}")
+        )
         left_layout.addWidget(combo)
 
         # QSpinBox: Integer input with up/down arrows
@@ -98,7 +127,9 @@ class MainWindow(QMainWindow):
         list_widget.addItems(["Item 1", "Item 2", "Item 3"])
         list_widget.setSelectionMode(QListWidget.SelectionMode.MultiSelection)
         list_widget.itemSelectionChanged.connect(
-            lambda: label.setText(f"Selected: {[item.text() for item in list_widget.selectedItems()]}")
+            lambda: label.setText(
+                f"Selected: {[item.text() for item in list_widget.selectedItems()]}"
+            )
         )
         right_layout.addWidget(list_widget)
 
@@ -149,6 +180,7 @@ class MainWindow(QMainWindow):
         # Stretch to push content up in layouts
         left_layout.addStretch()
         right_layout.addStretch()
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

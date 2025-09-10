@@ -1,4 +1,3 @@
-
 import pandas as pd
 
 full_dates = pd.date_range("2024-10-01", "2024-11-30")

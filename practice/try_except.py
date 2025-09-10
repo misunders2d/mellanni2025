@@ -1,5 +1,5 @@
-num1 = input('Enter a number: ')
-num2 = input('Enter another number: ')
+num1 = input("Enter a number: ")
+num2 = input("Enter another number: ")
 
 
 try:
@@ -9,7 +9,7 @@ try:
     if not isinstance(num2, (int, float)):
         num2 = float(num2)
 
-    print(num1/num2)
+    print(num1 / num2)
 except ZeroDivisionError:
     print("You can't divide by zero!")
 except ValueError:
