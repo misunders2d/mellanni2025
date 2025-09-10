@@ -55,17 +55,22 @@ class TitleChecker(ctk.CTk):
             inv_file = self.read_inventory()
             full_list = self.read_flat_files()
             dictionary = self.read_dictionary()
-            result = pd.merge(full_list, inv_file, how = 'left', on = 'sku')
-            result['sku'] = result['sku'].astype(str)
-            result = result[~result['sku'].str.lower().str.contains('parent')]
-            mismatch = result[result['Flat File title'] != result['Listing title']]
-            mismatch = mismatch.dropna()
-            if len(mismatch) > 0:
-                mismatch = pd.merge(mismatch, dictionary, how ='left', on='sku')
-                mm.export_to_excel([mismatch],['mismatched_titles'],'title_check.xlsx', out_folder=user_folder)
-                mm.open_file_folder(user_folder)
-            else:
-                self.warning_label.configure(text='No mismatch found')
+            if not full_list is None:
+                result = pd.merge(full_list, inv_file, how = 'left', on = 'sku')
+                result['sku'] = result['sku'].astype(str)
+                result = result[~result['sku'].str.lower().str.contains('parent')]
+                mismatch = result[
+                    (result['Flat File title'] != result['Listing title']) |
+                    (result['Flat File title'].str.contains("  ")) | 
+                    (result['Listing title'].str.contains("  "))
+                    ]
+                mismatch = mismatch.dropna()
+                if len(mismatch) > 0:
+                    mismatch = pd.merge(mismatch, dictionary, how ='left', on='sku')
+                    mm.export_to_excel([mismatch],['mismatched_titles'],'title_check.xlsx', out_folder=user_folder)
+                    mm.open_file_folder(user_folder)
+                else:
+                    self.warning_label.configure(text='No mismatch found')
         except Exception as e:
             print(e)
         self.progresbar.stop()
@@ -83,6 +88,7 @@ class TitleChecker(ctk.CTk):
             print('No files found, exiting')
         self.warning_label.configure(text=f'Reading {len(files)} flat files')
         full_list = pd.DataFrame()
+        cols_to_use = []
         for file in files:
             try:
                 column_file = pd.read_excel(os.path.join(self.file_dir, file), sheet_name='Template', skiprows=4, nrows=1)
