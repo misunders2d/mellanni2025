@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import customtkinter as ctk
 from concurrent.futures import ThreadPoolExecutor
+import numpy as np
 
 from common import user_folder
 from connectors import gcloud as gc
@@ -59,12 +60,17 @@ class TitleChecker(ctk.CTk):
                 result = pd.merge(full_list, inv_file, how = 'left', on = 'sku')
                 result['sku'] = result['sku'].astype(str)
                 result = result[~result['sku'].str.lower().str.contains('parent')]
-                mismatch = result[
-                    (result['Flat File title'] != result['Listing title']) |
-                    (result['Flat File title'].str.contains("  ")) | 
-                    (result['Listing title'].str.contains("  "))
+                result['reasons'] = ''
+                conditions_reasons = [
+                    (result['Flat File title'] != result['Listing title'], "Title mismatch"),
+                    (result['Flat File title'].str.contains("  ", na=False), "double space in flat file"),
+                    (result['Listing title'].str.contains("  ", na=False), "double space on Amazon"),
+                    (result['Flat File title'].str.contains(r"(?<!\s)\(", regex=True, na=False), "no space before '(' in flat file"),
+                    (result['Listing title'].str.contains(r"(?<!\s)\(", regex=True, na=False), "no space before '(' on Amazon"),
                     ]
-                mismatch = mismatch.dropna()
+                for cond, reason in conditions_reasons:
+                    result.loc[cond, "reasons"] += reason + "; "
+                mismatch = result[result['reasons'] != '']
                 if len(mismatch) > 0:
                     mismatch = pd.merge(mismatch, dictionary, how ='left', on='sku')
                     mm.export_to_excel([mismatch],['mismatched_titles'],'title_check.xlsx', out_folder=user_folder)
