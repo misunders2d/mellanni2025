@@ -8,12 +8,12 @@ input_folder = ""
 output_folder = ""
 selected_files = []
 
+
 def main():
     # Налаштування основного вікна
     root = ctk.CTk()
     root.title("Image Cropper")
     root.geometry("420x420")
-
 
     # Змінні для значень обрізки
     left_val = ctk.StringVar(value="0")
@@ -43,7 +43,7 @@ def main():
         global selected_files, input_folder
         files = filedialog.askopenfilenames(
             title="Select Image Files",
-            filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp *.tiff")]
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.bmp *.tiff")],
         )
         if files:
             selected_files = list(files)
@@ -68,20 +68,30 @@ def main():
                         width, height = img.size
                         right_adjusted = width - right if right < width else width
                         bottom_adjusted = height - bottom if bottom < height else height
-                        cropped_img = img.crop((left, top, right_adjusted, bottom_adjusted))
+                        cropped_img = img.crop(
+                            (left, top, right_adjusted, bottom_adjusted)
+                        )
                         name, ext = os.path.splitext(os.path.basename(file_path))
                         output_path = os.path.join(output_folder, f"{name}{ext}")
                         cropped_img.save(output_path)
-                        print(f"Оброблено: {os.path.basename(file_path)} -> {name}{ext}")
+                        print(
+                            f"Оброблено: {os.path.basename(file_path)} -> {name}{ext}"
+                        )
             elif input_folder:  # Якщо вибрано папку
                 for filename in os.listdir(input_folder):
-                    if filename.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
+                    if filename.lower().endswith(
+                        (".png", ".jpg", ".jpeg", ".bmp", ".tiff")
+                    ):
                         input_path = os.path.join(input_folder, filename)
                         with Image.open(input_path) as img:
                             width, height = img.size
                             right_adjusted = width - right if right < width else width
-                            bottom_adjusted = height - bottom if bottom < height else height
-                            cropped_img = img.crop((left, top, right_adjusted, bottom_adjusted))
+                            bottom_adjusted = (
+                                height - bottom if bottom < height else height
+                            )
+                            cropped_img = img.crop(
+                                (left, top, right_adjusted, bottom_adjusted)
+                            )
                             name, ext = os.path.splitext(filename)
                             output_path = os.path.join(output_folder, f"{name}{ext}")
                             cropped_img.save(output_path)
@@ -93,7 +103,9 @@ def main():
             status_label.configure(text="Image cropping completed!")
             os.startfile(output_folder)  # Відкриваємо output_folder після завершення
         except ValueError:
-            status_label.configure(text="Please enter valid numeric values for cropping!")
+            status_label.configure(
+                text="Please enter valid numeric values for cropping!"
+            )
         except Exception as e:
             status_label.configure(text=f"Error: {str(e)}")
 
@@ -101,22 +113,30 @@ def main():
     input_label = ctk.CTkLabel(master=root, text="Input: Not selected")
     input_label.pack(pady=10)
 
-    input_button = ctk.CTkButton(master=root, text="Select Input Folder", command=select_input_folder)
+    input_button = ctk.CTkButton(
+        master=root, text="Select Input Folder", command=select_input_folder
+    )
     input_button.pack(pady=5)
 
-    files_button = ctk.CTkButton(master=root, text="Select Image Files", command=select_files)
+    files_button = ctk.CTkButton(
+        master=root, text="Select Image Files", command=select_files
+    )
     files_button.pack(pady=5)
 
     output_label = ctk.CTkLabel(master=root, text="Output Folder: Not selected")
     output_label.pack(pady=10)
 
-    output_button = ctk.CTkButton(master=root, text="Select Output Folder", command=select_output_folder)
+    output_button = ctk.CTkButton(
+        master=root, text="Select Output Folder", command=select_output_folder
+    )
     output_button.pack(pady=5)
 
     crop_button = ctk.CTkButton(master=root, text="Crop Images", command=crop_images)
     crop_button.pack(pady=20)
 
-    status_label = ctk.CTkLabel(master=root, text="Please select folders or files to start", text_color="gray")
+    status_label = ctk.CTkLabel(
+        master=root, text="Please select folders or files to start", text_color="gray"
+    )
     status_label.pack(pady=10)
 
     # Поля для введення значень обрізки
@@ -141,5 +161,6 @@ def main():
 
     root.mainloop()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

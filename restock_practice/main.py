@@ -9,7 +9,7 @@ start_date = pd.to_datetime("today").date() - pd.Timedelta(days=181)
 start_date = (
     "2025-05-30" if start_date < pd.to_datetime("2025-05-30").date() else start_date
 )
-#la la la classmethod()
+# la la la classmethod()
 end_date = pd.to_datetime("today").date() - pd.Timedelta(days=1)
 
 inv = database_tools.read_database("fba_inventory", start_date, end_date)
@@ -112,9 +112,11 @@ def get_asin_sales(sales, total_day):
         .reset_index()
     )
     total_sales["conversion"] = total_sales.apply(
-        lambda row: row["sessions_-_total"] / row["units_ordered"]
-        if row["units_ordered"] != 0
-        else 0,
+        lambda row: (
+            row["sessions_-_total"] / row["units_ordered"]
+            if row["units_ordered"] != 0
+            else 0
+        ),
         axis=1,
     )
     total_sales["average_daily_units"] = total_sales["units_ordered"] / total_day
@@ -143,11 +145,13 @@ def main():
         + result["average_2_weeks_units_corrected"] * 0.6
     )
 
-    mm.export_to_excel([result, total_sales],['restock_practice', 'sales'], 'test_restock.xlsx')
+    mm.export_to_excel(
+        [result, total_sales], ["restock_practice", "sales"], "test_restock.xlsx"
+    )
 
     # This should be my changes2.
 
 
 if __name__ == "__main__":
     main()
-#Vitalson
+# Vitalson

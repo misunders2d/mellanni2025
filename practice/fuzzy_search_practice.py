@@ -525,7 +525,7 @@ target = "mellanni bedspread"
 #             temp.append(False)
 #         inner_list.append(any(temp))
 #     top_list.append(all(inner_list))
- 
+
 # # print("Top List: ", top_list)
 # for i, condition in enumerate(top_list):
 #     if condition:
@@ -538,11 +538,20 @@ def is_similar(search_term, target, threshold=75):
     """
     words = search_term.lower().split()
     targets = target.lower().split()
-    return all([any([fuzz.ratio(search_term, word)>=threshold for word in words]) for search_term in targets])
+    return all(
+        [
+            any([fuzz.ratio(search_term, word) >= threshold for word in words])
+            for search_term in targets
+        ]
+    )
 
 
-df = pd.read_excel('/home/misunderstood/Downloads/SQP_data (2).xlsx', sheet_name="Search Query") #change path to your SQP file
+df = pd.read_excel(
+    "/home/misunderstood/Downloads/SQP_data (2).xlsx", sheet_name="Search Query"
+)  # change path to your SQP file
 
-bool_mask = df['Search Query'].apply(lambda x: is_similar(x, target, threshold=threshold))
+bool_mask = df["Search Query"].apply(
+    lambda x: is_similar(x, target, threshold=threshold)
+)
 
 print(df[bool_mask])
