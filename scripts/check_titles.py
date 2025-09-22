@@ -98,7 +98,8 @@ class TitleChecker(ctk.CTk):
                     result.loc[cond, "reasons"] += reason + "; "
                 mismatch = result[result["reasons"] != ""]
                 drop = mismatch[
-                    (mismatch["reasons"] == "Title mismatch; ") & (mismatch["Listing title"].isnull())
+                    (mismatch["reasons"] == "Title mismatch; ")
+                    & (mismatch["Listing title"].isnull())
                 ]
                 mismatch = mismatch.drop(index=drop.index)
                 if len(mismatch) > 0:

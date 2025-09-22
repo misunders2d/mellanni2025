@@ -1945,6 +1945,17 @@ class Product:
                 )
             else:
                 total["potential duplicate"] = ""
+            sku_inventory = (
+                self.inventory_df[["sku", "Inventory_Supply_at_FBA"]]
+                .drop_duplicates("sku")
+                .copy()
+            )
+            sku_inventory = sku_inventory.rename(
+                columns={"Inventory_Supply_at_FBA": "Inventory_Supply_at_FBA_per_sku"}
+            )
+            total = pd.merge(
+                total, sku_inventory, how="outer", on="sku", validate="m:1"
+            ).fillna(0)
             cols_reordered = (
                 [
                     "marketplace",
@@ -1961,6 +1972,7 @@ class Product:
                     "dos inbound",
                     "available",
                     "Inventory_Supply_at_FBA",
+                    "Inventory_Supply_at_FBA_per_sku",
                     "estimated_excess_quantity",
                     "to ship, units",
                     "sets in a box",
