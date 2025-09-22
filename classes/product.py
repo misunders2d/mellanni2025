@@ -1955,7 +1955,7 @@ class Product:
             )
             total = pd.merge(
                 total, sku_inventory, how="outer", on="sku", validate="m:1"
-            ).fillna(0)
+            )
             cols_reordered = (
                 [
                     "marketplace",
