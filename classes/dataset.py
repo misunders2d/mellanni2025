@@ -591,7 +591,7 @@ class Dataset:
                 sellable = sellable.pivot_table(
                     values=["QtyAvailable", "QtyPhysical", "date"],
                     index="sku",
-                    aggfunc={
+                    aggfunc={  # type: ignore
                         "QtyAvailable": "sum",
                         "QtyPhysical": "sum",
                         "date": "max",
@@ -604,7 +604,7 @@ class Dataset:
                 receiving = receiving.pivot_table(
                     values=["QtyAvailable", "QtyPhysical", "date"],
                     index="sku",
-                    aggfunc={
+                    aggfunc={  # type: ignore
                         "QtyAvailable": "sum",
                         "QtyPhysical": "sum",
                         "date": "max",
@@ -678,7 +678,7 @@ class Dataset:
             result = unnested.pivot_table(
                 values=["QtyOrdered", "eta"],
                 index=["year-week", "SKU"],
-                aggfunc={"QtyOrdered": "sum", "eta": "max"},
+                aggfunc={"QtyOrdered": "sum", "eta": "max"},  # type: ignore
             ).reset_index()
             result = result.rename(columns={"SKU": "sku"}).sort_values(
                 "eta", ascending=False
