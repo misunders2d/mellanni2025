@@ -263,18 +263,27 @@ class Dataset:
 
     @error_checker
     def pull_dictionary(
-        self,
+        self, marketplace: Literal["US", "UK", "EU", "CA", "ALL"] = "ALL"
     ):  # TODO add conditional to download different self.markets' dictionaries
         if self.local_data:
             result = self.__read_local__(os.path.join(user_folder, "dictionary.csv"))
         else:
             result = pd.DataFrame()
-            dict_ids = {
+            dict_ids_mapping = {
                 "US": ("1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4", "Dictionary.xlsx"),
                 "UK": ("1vt8UB2FeQp0RJimnCATI8OQt5N-bysx-", "Dictionary_UK.xlsx"),
                 "EU": ("1uye8_FNxI11ZUOKnUYUfko1vqwpJVnMj", "Dictionary_EU.xlsx"),
                 "CA": ("1ZijSZTqY1_5F307uMkdcneqTKIoNSsds", "Dictionary_CA.xlsx"),
             }
+            dict_ids = (
+                {
+                    key: value
+                    for key, value in dict_ids_mapping.items()
+                    if key == marketplace
+                }
+                if marketplace != "ALL"
+                else dict_ids_mapping
+            )
             for market, (folder_id, file_name) in dict_ids.items():
                 dictionary_id = gd.find_file_id(
                     folder_id=folder_id,
