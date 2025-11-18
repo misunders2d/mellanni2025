@@ -15,6 +15,7 @@ pandas
 pandas-gbq
 openai
 pillow
+pyperclip
 pyside6
 python-telegram-bot
 python-Levenshtein
