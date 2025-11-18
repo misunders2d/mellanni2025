@@ -100,8 +100,17 @@ class MainApp(ctk.CTk):
             text="Marketplace promos",
             command=self.call_marketplace_promos,
         )
+
         self.marketplace_promos_button.grid(
             row=1, column=1, padx=self.xspacing, pady=self.yspacing
+        )
+        self.event_sales_button = ctk.CTkButton(
+            self.tools_frame,
+            text="Event sales",
+            command=self.call_event_sales,
+        )
+        self.event_sales_button.grid(
+            row=2, column=1, padx=self.xspacing, pady=self.yspacing
         )
 
         # bottom section
@@ -177,6 +186,12 @@ class MainApp(ctk.CTk):
 
         # self.after(200, self.destroy)
         marketplace_promos.main()
+
+    def call_event_sales(self):
+        from scripts import event_sales
+
+        self.after(200, self.destroy)
+        event_sales.main()
 
 
 if __name__ == "__main__":
