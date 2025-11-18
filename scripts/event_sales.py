@@ -1,13 +1,15 @@
 import customtkinter as ctk
 import pandas as pd
 from common import user_folder
+import pyperclip
 from ctk_gui.ctk_windows import PopupError, PopupWarning
-
+all_orders_link = "https://sellercentral.amazon.com/reportcentral/FlatFileAllOrdersReport/1"
 
 def main():
     try:
+        pyperclip.copy(all_orders_link)
         PopupWarning(
-            "First, download the `All orders` report from Seller Central.\n\n https://sellercentral.amazon.com/reportcentral/FlatFileAllOrdersReport/1"
+            f"First, download the `All orders` report from Seller Central.\n\n{all_orders_link}\n\nThe link has been copied to your clipboard."
         )
         path = ctk.filedialog.askopenfilename(
             title="All orders file", initialdir=user_folder
