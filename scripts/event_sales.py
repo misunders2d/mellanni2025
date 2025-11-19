@@ -3,10 +3,20 @@ import pandas as pd
 from common import user_folder
 import pyperclip
 from ctk_gui.ctk_windows import PopupError, PopupWarning
+from connectors import gcloud as gc
+
 all_orders_link = "https://sellercentral.amazon.com/reportcentral/FlatFileAllOrdersReport/1"
+
+def get_dictionary():
+    query = "SELECT asin, collection, size, color FROM `auxillary_development.dictionary`"
+    client = gc.gcloud_connect()
+    dictionary = client.query(query).to_dataframe()
+    dictionary = dictionary.drop_duplicates('asin')
+    return dictionary
 
 def main():
     try:
+        dictionary = get_dictionary()
         pyperclip.copy(all_orders_link)
         PopupWarning(
             f"First, download the `All orders` report from Seller Central.\n\n{all_orders_link}\n\nThe link has been copied to your clipboard."
@@ -26,6 +36,8 @@ def main():
             values="quantity", index="asin", columns="pacific-date", aggfunc="sum"
         ).reset_index()
 
+        result = pd.merge(dictionary, result, on='asin', how='right')
+
         result.to_clipboard(index=False)  # sku sales
         PopupWarning(
             "Event sales are copied to clipboard. You can now paste them to any Excel spreadsheet."
@@ -33,7 +45,6 @@ def main():
         
     except Exception as e:
         PopupError(str(e))
-
 
 if __name__ == "__main__":
     main()
