@@ -190,7 +190,7 @@ class MainApp(ctk.CTk):
     def call_event_sales(self):
         from scripts import event_sales
 
-        self.after(200, self.destroy)
+        # self.after(200, self.destroy)
         event_sales.main()
 
 
