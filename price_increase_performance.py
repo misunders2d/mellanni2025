@@ -46,7 +46,7 @@ def main(events=False, change_list=["Price increase"]):
         start="2025-01-05",
         end="2025-12-31",
         market=countries,
-        local_data=True,
+        local_data=False,
         save=False,
     )
     d.pull_changelog()
