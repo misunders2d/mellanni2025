@@ -8,26 +8,33 @@ import threading
 
 results = {}
 
-all_orders_link = "https://sellercentral.amazon.com/reportcentral/FlatFileAllOrdersReport/1"
+all_orders_link = (
+    "https://sellercentral.amazon.com/reportcentral/FlatFileAllOrdersReport/1"
+)
+
 
 def get_dictionary():
-    print('Starting to pull dictionary')
-    query = "SELECT asin, collection, size, color FROM `auxillary_development.dictionary`"
+    print("Starting to pull dictionary")
+    query = (
+        "SELECT asin, collection, size, color FROM `auxillary_development.dictionary`"
+    )
     client = gc.gcloud_connect()
     dictionary = client.query(query).to_dataframe()
-    dictionary = dictionary.drop_duplicates('asin')
-    results['get_dictionary'] = dictionary
-    print('Finished pulling dictionary')
+    dictionary = dictionary.drop_duplicates("asin")
+    results["get_dictionary"] = dictionary
+    print("Finished pulling dictionary")
     # return dictionary
+
 
 def get_sales():
     print("getting sales...")
-    results['sales'] = "These are the sales"
+    results["sales"] = "These are the sales"
+
 
 def main():
     try:
-        dictionary_thread = threading.Thread(target = get_dictionary)
-        sales_thread = threading.Thread(target = get_sales)
+        dictionary_thread = threading.Thread(target=get_dictionary)
+        sales_thread = threading.Thread(target=get_sales)
         dictionary_thread.start()
         sales_thread.start()
         # dictionary = get_dictionary()
@@ -51,16 +58,17 @@ def main():
         ).reset_index()
 
         dictionary_thread.join()
-        dictionary = results['get_dictionary']
-        result = pd.merge(dictionary, result, on='asin', how='right')
+        dictionary = results["get_dictionary"]
+        result = pd.merge(dictionary, result, on="asin", how="right")
 
         result.to_clipboard(index=False)  # sku sales
         PopupWarning(
             "Event sales are copied to clipboard. You can now paste them to any Excel spreadsheet."
         )
-        
+
     except Exception as e:
         PopupError(str(e))
+
 
 if __name__ == "__main__":
     main()
