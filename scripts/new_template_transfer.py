@@ -24,9 +24,6 @@ class App(ctk.CTk):
         self.new_file.bind("<Button-1>", self.new_file_input)
         self.new_file.pack(pady=10)
 
-        self.diff_template_generations = ctk.CTkCheckBox(self, text="Different template generations")
-        self.diff_template_generations.pack(pady=10)
-
         self.button = ctk.CTkButton(self, text="OK", command=self.combine_files)
         self.button.pack(pady=10)
 
@@ -41,21 +38,6 @@ class App(ctk.CTk):
             initialdir=user_folder, title="Select new file"
         )
         self.new_file.insert(0, self.new_file_path)
-
-
-    def rename_columns(self, source_df, target_df):
-        source_cols = source_df.columns.tolist()
-        target_cols = target_df.columns.tolist()
-
-        mapping = {}
-        for s_col in source_cols:
-            for t_col in target_cols:
-                if s_col.lower() in t_col.lower():
-                    mapping[s_col] = t_col
-                    break
-
-        renamed_df = source_df.rename(columns=mapping)
-        return renamed_df
 
     def combine_files(self):
 
@@ -74,9 +56,6 @@ class App(ctk.CTk):
         new = pd.read_excel(
             self.new_file_path, sheet_name="Template", header=i + 1
         ).fillna("")
-
-        if self.diff_template_generations.get():
-            old = self.rename_columns(old, new)
 
         missed_columns = [x for x in old.columns if x not in new.columns]
         new_columns = [x for x in new.columns if x not in old.columns]
