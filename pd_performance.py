@@ -63,7 +63,7 @@ if __name__ == "__main__":
         )
 
         total_event_stats[f"{event_name} X increase"] = (
-            total_event_stats[f"{event_name} average"]
+            total_event_stats[f"{event_name} total units"]
             / total_event_stats[f"pre-{event_name} avg units"]
         )
 

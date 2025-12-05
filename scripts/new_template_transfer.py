@@ -1,6 +1,7 @@
 import pandas as pd
 import customtkinter as ctk
 import os
+from scripts import data
 from common import user_folder
 from utils import mellanni_modules as mm
 
@@ -24,6 +25,9 @@ class App(ctk.CTk):
         self.new_file.bind("<Button-1>", self.new_file_input)
         self.new_file.pack(pady=10)
 
+        self.change_generation = ctk.CTkCheckBox(self, text="Switch flat file generation")
+        self.change_generation.pack(pady=10)
+
         self.button = ctk.CTkButton(self, text="OK", command=self.combine_files)
         self.button.pack(pady=10)
 
@@ -38,6 +42,17 @@ class App(ctk.CTk):
             initialdir=user_folder, title="Select new file"
         )
         self.new_file.insert(0, self.new_file_path)
+
+    def rename_columns(self, old):
+        old_columns = old.columns.tolist()
+        check_column = list(data.sheets_mapping.keys())[0]
+        if check_column in old_columns:
+            mapping = data.sheets_mapping
+        else:
+            mapping = {v:k for k,v in data.sheets_mapping.items()}
+
+        old = old.rename(columns=mapping)
+        return old
 
     def combine_files(self):
 
@@ -56,6 +71,9 @@ class App(ctk.CTk):
         new = pd.read_excel(
             self.new_file_path, sheet_name="Template", header=i + 1
         ).fillna("")
+
+        if self.change_generation.get():
+            old = self.rename_columns(old)
 
         missed_columns = [x for x in old.columns if x not in new.columns]
         new_columns = [x for x in new.columns if x not in old.columns]
