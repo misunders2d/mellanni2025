@@ -25,7 +25,9 @@ class App(ctk.CTk):
         self.new_file.bind("<Button-1>", self.new_file_input)
         self.new_file.pack(pady=10)
 
-        self.change_generation = ctk.CTkCheckBox(self, text="Switch flat file generation")
+        self.change_generation = ctk.CTkCheckBox(
+            self, text="Switch flat file generation"
+        )
         self.change_generation.pack(pady=10)
 
         self.button = ctk.CTkButton(self, text="OK", command=self.combine_files)
@@ -49,7 +51,7 @@ class App(ctk.CTk):
         if check_column in old_columns:
             mapping = data.sheets_mapping
         else:
-            mapping = {v:k for k,v in data.sheets_mapping.items()}
+            mapping = {v: k for k, v in data.sheets_mapping.items()}
 
         old = old.rename(columns=mapping)
         return old
