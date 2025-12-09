@@ -113,6 +113,15 @@ class MainApp(ctk.CTk):
             row=2, column=1, padx=self.xspacing, pady=self.yspacing
         )
 
+        self.dimensions_button = ctk.CTkButton(
+            self.tools_frame,
+            text="Pull and compare dimensions",
+            command=self.call_dimensions,
+        )
+        self.dimensions_button.grid(
+            row=2, column=1, padx=self.xspacing, pady=self.yspacing
+        )
+
         # bottom section
         self.update_button = ctk.CTkButton(
             self, text="Update", fg_color="gray", command=self.update
@@ -192,6 +201,13 @@ class MainApp(ctk.CTk):
 
         # self.after(200, self.destroy)
         event_sales.main()
+
+    def call_dimensions(self):
+        from scripts import dimensions
+
+        # self.after(200, self.destroy)
+        dimensions.main()
+
 
 
 if __name__ == "__main__":
