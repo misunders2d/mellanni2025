@@ -38,20 +38,28 @@ def main():
             ]
         ]
 
-        column_mapping = {'l': 'target_l',
-        'w': 'target_w',
-        'h': 'target_h',
-        'individual weight lbs': 'target_weight',
-        'sets in a box': 'target_qty_per_box',
-        'box length': 'target_box_l',
-        'box width': 'target_box_w',
-        'box depth': 'target_box_h',
-        'box weight lbs': 'target_box_weight'}
+        column_mapping = {
+            "l": "target_l",
+            "w": "target_w",
+            "h": "target_h",
+            "individual weight lbs": "target_weight",
+            "sets in a box": "target_qty_per_box",
+            "box length": "target_box_l",
+            "box width": "target_box_w",
+            "box depth": "target_box_h",
+            "box weight lbs": "target_box_weight",
+        }
 
         for key in column_mapping:
             total[key] = total[key].round(2)
 
-        matches = pd.DataFrame([pd.to_numeric(total[key], errors='coerce').round(2) != pd.to_numeric(total[value], errors='coerce').round(2) for key, value in column_mapping.items()]).T
-        total['difference'] = matches.any(axis=1)
-        mm.export_to_excel([total], ['dimensions'], 'dimensions.xlsx', user_folder)
+        matches = pd.DataFrame(
+            [
+                pd.to_numeric(total[key], errors="coerce").round(2)
+                != pd.to_numeric(total[value], errors="coerce").round(2)
+                for key, value in column_mapping.items()
+            ]
+        ).T
+        total["difference"] = matches.any(axis=1)
+        mm.export_to_excel([total], ["dimensions"], "dimensions.xlsx", user_folder)
         mm.open_file_folder(user_folder)

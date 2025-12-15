@@ -122,6 +122,15 @@ class MainApp(ctk.CTk):
             row=2, column=1, padx=self.xspacing, pady=self.yspacing
         )
 
+        self.oversize_button = ctk.CTkButton(
+            self.tools_frame,
+            text="Check AMZ oversize",
+            command=self.call_oversize,
+        )
+        self.oversize_button.grid(
+            row=3, column=1, padx=self.xspacing, pady=self.yspacing
+        )
+
         # bottom section
         self.update_button = ctk.CTkButton(
             self, text="Update", fg_color="gray", command=self.update
@@ -200,14 +209,17 @@ class MainApp(ctk.CTk):
         from scripts import event_sales
 
         # self.after(200, self.destroy)
-        event_sales.main()
+        self.executor.submit(event_sales.main)
 
     def call_dimensions(self):
         from scripts import dimensions
 
         # self.after(200, self.destroy)
-        dimensions.main()
+        self.executor.submit(dimensions.main)
 
+    def call_oversize(self):
+        from scripts import oversize_check
+        self.executor.submit(oversize_check.main)
 
 
 if __name__ == "__main__":
