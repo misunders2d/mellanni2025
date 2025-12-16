@@ -17,6 +17,7 @@ SALE_FILE: str = "1iB1CmY_XdOVA4FvLMPeiEGEcxiVEH3Bgp4FJs1iNmQs"
 PRICELIST_ID: str = "1VGZ5VGsQiYgX9X6PxrRREj265gMzVQu9UQMKnT_014o"
 EVENT_FILE: str = "1XcrMgklKRvElCb8vZI5r6j0P9ha4wmlPZdpU9MWq7QA"
 DICTIONARY_FILENAME: str = "Dictionary.xlsx"
+DICTIONARY_FILE_ID: str = "1Y4XhSBCXqmEVHHOnugEpzZZ3NQ5ZRGOlp-AsTE0KmRE"
 marketplace: str = "US"
 
 
@@ -91,15 +92,18 @@ class App(ctk.CTk):
         return
 
     def download_dictionary(self):
-        dictionary_id = dm.find_file_id(
-            folder_id="1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4",
-            drive_id="0AMdx9NlXacARUk9PVA",
-            filename=DICTIONARY_FILENAME,
-        )
-        dictionary = pd.read_excel(
-            dm.download_file(dictionary_id),
-            usecols=["SKU", "Collection", "Sub-collection", "Size Map", "Color"],
-        )
+        # dictionary_id = dm.find_file_id(
+        #     folder_id="1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4",
+        #     drive_id="0AMdx9NlXacARUk9PVA",
+        #     filename=DICTIONARY_FILENAME,
+        # )
+
+        dictionary_spreadsheet = dm.download_gspread(spreadsheet_id=DICTIONARY_FILE_ID, sheet_id="449289593")
+        # dictionary = pd.read_excel(
+        #     dm.download_file(DICTIONARY_FILE_ID),
+        #     usecols=["SKU", "Collection", "Sub-collection", "Size Map", "Color"],
+        # )
+        dictionary = dictionary_spreadsheet[["SKU", "Collection", "Sub-collection", "Size Map", "Color"]]
         dictionary = dictionary[~dictionary["Collection"].isin(excluded_collections)]
         del dictionary["Collection"]
         dictionary = dictionary.rename(
