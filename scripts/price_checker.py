@@ -1,7 +1,7 @@
 from common import excluded_collections, user_folder
 
 import pandas as pd
-import os, numpy as np
+import numpy as np
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from connectors.gcloud import gcloud_connect
