@@ -270,10 +270,10 @@ class Dataset:
         else:
             result = pd.DataFrame()
             dict_ids_mapping = {
-                "US": ("1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4", "Dictionary.xlsx"),
-                "UK": ("1vt8UB2FeQp0RJimnCATI8OQt5N-bysx-", "Dictionary_UK.xlsx"),
-                "EU": ("1uye8_FNxI11ZUOKnUYUfko1vqwpJVnMj", "Dictionary_EU.xlsx"),
-                "CA": ("1ZijSZTqY1_5F307uMkdcneqTKIoNSsds", "Dictionary_CA.xlsx"),
+                "US": ("1Y4XhSBCXqmEVHHOnugEpzZZ3NQ5ZRGOlp-AsTE0KmRE", "449289593", "spreadsheet"),
+                "UK": ("1vt8UB2FeQp0RJimnCATI8OQt5N-bysx-", "Dictionary_UK.xlsx", "file"),
+                "EU": ("1uye8_FNxI11ZUOKnUYUfko1vqwpJVnMj", "Dictionary_EU.xlsx", "file"),
+                "CA": ("1ZijSZTqY1_5F307uMkdcneqTKIoNSsds", "Dictionary_CA.xlsx", "file"),
             }
             dict_ids = (
                 {
@@ -284,15 +284,18 @@ class Dataset:
                 if marketplace != "ALL"
                 else dict_ids_mapping
             )
-            for market, (folder_id, file_name) in dict_ids.items():
-                dictionary_id = gd.find_file_id(
-                    folder_id=folder_id,
-                    filename=file_name,
-                    drive_id="0AMdx9NlXacARUk9PVA",
-                )
-                temp: pd.DataFrame = pd.read_excel(
-                    gd.download_file(file_id=dictionary_id)
-                )
+            for market, (folder_id, file_name, file_type) in dict_ids.items():
+                if file_type == "file":
+                    dictionary_id = gd.find_file_id(
+                        folder_id=folder_id,
+                        filename=file_name,
+                        drive_id="0AMdx9NlXacARUk9PVA",
+                    )
+                    temp: pd.DataFrame = pd.read_excel(
+                        gd.download_file(file_id=dictionary_id)
+                    )
+                else:
+                    temp = gd.download_gspread(spreadsheet_id=folder_id, sheet_id=file_name)
                 temp["marketplace"] = market
                 result = pd.concat([result, temp])
 
@@ -677,12 +680,12 @@ class Dataset:
                     temp["eta"] = df.ExpectedDeliveryDate
                     unnested = pd.concat([unnested, temp])
             unnested["eta"] = pd.to_datetime(unnested["eta"])
-            unnested["year"] = unnested["eta"].dt.year
+            unnested["year"] = pd.to_datetime(unnested["eta"]).dt.year
             unnested["week"] = unnested["eta"].apply(week_number)
             unnested["year-week"] = (
                 unnested["year"].astype(str) + "-" + unnested["week"].astype(str)
             )
-            unnested["eta"] = unnested["eta"].dt.date
+            unnested["eta"] = pd.to_datetime(unnested["eta"]).dt.date
 
             result = unnested.pivot_table(
                 values=["QtyOrdered", "eta"],
