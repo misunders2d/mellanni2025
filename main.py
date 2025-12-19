@@ -139,10 +139,14 @@ class MainApp(ctk.CTk):
 
     def update(self):
         import subprocess
+        import os
+        venv_folder = '.venv' if '.venv' in os.listdir(os.getcwd()) else 'venv'
 
         subprocess.call(["git", "restore", "."])
         subprocess.call(["git", "pull", "-f"])
+        subprocess.call([fr"{venv_folder}\Scripts\activate"])
         subprocess.call(["pip", "install", "-r", "requirements.txt", "--upgrade"])
+        subprocess.call(['uv','sync'])
 
     def call_image_rekognition(self):
         from scripts import aws_image_rekognition
