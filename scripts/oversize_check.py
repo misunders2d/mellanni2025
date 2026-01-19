@@ -37,9 +37,7 @@ def combine_files(dimensions, amz_fees):
     )
     result["problem"] = (
         result["product-size-tier"].str.lower().str.contains("bulky")
-    ) & (
-        ~result["size_tier"].str.lower().str.contains("bulky", na=False)
-        )
+    ) & (~result["size_tier"].str.lower().str.contains("bulky", na=False))
     return result
 
 
@@ -52,8 +50,9 @@ def main():
     dimensions = dimensions_future.result()
     amz_fees = amazon_fees_future.result()
     result = combine_files(dimensions, amz_fees)
-    mm.export_to_excel([result], ['oversize'], 'oversize.xlsx', user_folder)
+    mm.export_to_excel([result], ["oversize"], "oversize.xlsx", user_folder)
     mm.open_file_folder(user_folder)
+
 
 if __name__ == "__main__":
     main()
