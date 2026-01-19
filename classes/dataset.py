@@ -270,10 +270,26 @@ class Dataset:
         else:
             result = pd.DataFrame()
             dict_ids_mapping = {
-                "US": ("1Y4XhSBCXqmEVHHOnugEpzZZ3NQ5ZRGOlp-AsTE0KmRE", "449289593", "spreadsheet"),
-                "UK": ("1vt8UB2FeQp0RJimnCATI8OQt5N-bysx-", "Dictionary_UK.xlsx", "file"),
-                "EU": ("1uye8_FNxI11ZUOKnUYUfko1vqwpJVnMj", "Dictionary_EU.xlsx", "file"),
-                "CA": ("1ZijSZTqY1_5F307uMkdcneqTKIoNSsds", "Dictionary_CA.xlsx", "file"),
+                "US": (
+                    "1Y4XhSBCXqmEVHHOnugEpzZZ3NQ5ZRGOlp-AsTE0KmRE",
+                    "449289593",
+                    "spreadsheet",
+                ),
+                "UK": (
+                    "1vt8UB2FeQp0RJimnCATI8OQt5N-bysx-",
+                    "Dictionary_UK.xlsx",
+                    "file",
+                ),
+                "EU": (
+                    "1uye8_FNxI11ZUOKnUYUfko1vqwpJVnMj",
+                    "Dictionary_EU.xlsx",
+                    "file",
+                ),
+                "CA": (
+                    "1ZijSZTqY1_5F307uMkdcneqTKIoNSsds",
+                    "Dictionary_CA.xlsx",
+                    "file",
+                ),
             }
             dict_ids = (
                 {
@@ -295,7 +311,9 @@ class Dataset:
                         gd.download_file(file_id=dictionary_id)
                     )
                 else:
-                    temp = gd.download_gspread(spreadsheet_id=folder_id, sheet_id=file_name)
+                    temp = gd.download_gspread(
+                        spreadsheet_id=folder_id, sheet_id=file_name
+                    )
                 temp["marketplace"] = market
                 result = pd.concat([result, temp])
 

@@ -44,7 +44,7 @@ def main(events=False, change_list=["Price increase"]):
 
     d = Dataset(
         start="2025-01-05",
-        end="2025-12-31",
+        end="2026-12-31",
         market=countries,
         local_data=False,
         save=False,
@@ -76,7 +76,7 @@ def main(events=False, change_list=["Price increase"]):
         changes = changes[changes["change_type"].isin(change_list)].copy()
     changes["change"] = np.where(
         changes["notes"].astype(str).str.strip() != "nan",
-        changes["change_type"] + " : " + changes["notes"],
+        changes["change_type"].astype(str) + " : " + changes["notes"],
         changes["change_type"],
     )
     changes = pd.merge(changes, dictionary, how="left", on="sku", validate="m:1")

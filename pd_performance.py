@@ -3,7 +3,6 @@ from functools import reduce
 from classes.dataset import Dataset
 from common.events import event_dates, event_dates_list
 
-
 if __name__ == "__main__":
 
     d = Dataset(

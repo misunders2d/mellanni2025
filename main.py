@@ -218,6 +218,7 @@ class MainApp(ctk.CTk):
 
     def call_oversize(self):
         from scripts import oversize_check
+
         self.executor.submit(oversize_check.main)
 
 

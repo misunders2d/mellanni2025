@@ -3,7 +3,6 @@ import pandas as pd
 import os
 from utils_restock import check_folders, read_files
 
-
 if not check_folders():
     print(
         "Please create the reports_data folder and its subfolders (fba_inventory, sales) before running the script."

@@ -39,13 +39,22 @@ class App(ctk.CTk):
         self.progress = ctk.CTkProgressBar(self, mode="indeterminate")
         self.progress.grid(row=1, column=0, columnspan=2, pady=10, padx=10, sticky="ew")
 
+        self.inv_days = ctk.CTkEntry(self, placeholder_text="3", width=40)
+        self.inv_days.grid(row=2, column=0, pady=10, padx=10)
+        self.inv_days.insert(0, "3")
+
+        self.inv_days_label = ctk.CTkLabel(
+            self, text="How many days of inventory to account?"
+        )
+        self.inv_days_label.grid(row=2, column=1, pady=10, padx=10)
+
         self.button = ctk.CTkButton(self, text="GO", command=self.process_prices)
-        self.button.grid(row=2, column=0, pady=10, padx=10)
+        self.button.grid(row=3, column=0, pady=10, padx=10)
 
         self.custom_file_checkbox = ctk.CTkCheckBox(
             self, text="Use .csv inventory file instead"
         )
-        self.custom_file_checkbox.grid(row=2, column=1, pady=10, padx=10)
+        self.custom_file_checkbox.grid(row=3, column=1, pady=10, padx=10)
 
     def download_sale_file(self):
         # get information from pricing (sales) file
@@ -79,6 +88,15 @@ class App(ctk.CTk):
                 }
             )
         else:
+            try:
+                num_days = int(self.inv_days.get())
+            except ValueError:
+                self.print_area.insert(
+                    ctk.END, text="Inventory days MUST be an INTEGER!"
+                )
+                raise BaseException(
+                    f"Inventory days MUST be an INTEGER!, you entered `{self.inv_days.get()}`"
+                )
             fba_query = f"""
             WITH RecentSnapshots AS (
             SELECT
@@ -89,7 +107,7 @@ class App(ctk.CTk):
             WHERE 
                 marketplace = "{marketplace}"
                 AND LOWER(condition) = "new"
-                AND snapshot_date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 3 DAY)
+                AND snapshot_date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {num_days} DAY)
             )            
             SELECT DATE(snapshot_date) as snapshot_date, sku as SKU, available, your_price, sales_price
             FROM RecentSnapshots
@@ -101,20 +119,21 @@ class App(ctk.CTk):
         return
 
     def download_dictionary(self):
-        # dictionary_id = dm.find_file_id(
-        #     folder_id="1zIHmbWcRRVyCTtuB9Atzam7IhAs8Ymx4",
-        #     drive_id="0AMdx9NlXacARUk9PVA",
-        #     filename=DICTIONARY_FILENAME,
-        # )
+        dictionary_spreadsheet = dm.download_gspread(
+            spreadsheet_id=DICTIONARY_FILE_ID, sheet_id="449289593"
+        )
 
-        dictionary_spreadsheet = dm.download_gspread(spreadsheet_id=DICTIONARY_FILE_ID, sheet_id="449289593")
-        # dictionary = pd.read_excel(
-        #     dm.download_file(DICTIONARY_FILE_ID),
-        #     usecols=["SKU", "Collection", "Sub-collection", "Size Map", "Color"],
-        # )
         dictionary = dictionary_spreadsheet[
-            ["SKU", "Collection", "Sub-collection", "Size Map", "Color",'Standard price', 'MSRP']
+            [
+                "SKU",
+                "Collection",
+                "Sub-collection",
+                "Size Map",
+                "Color",
+                "Standard price",
+                "MSRP",
             ]
+        ]
         dictionary = dictionary[~dictionary["Collection"].isin(excluded_collections)]
         del dictionary["Collection"]
         dictionary = dictionary.rename(
@@ -136,10 +155,9 @@ class App(ctk.CTk):
         self.print_area.insert(ctk.END, text="dictionary downloaded\n")
         return
 
-
     def merge_files(self, dictionary, fba_inventory, sale_file, event_file):
         self.print_area.insert(ctk.END, text="Merging files\n")
-        
+
         price_check = pd.merge(dictionary, fba_inventory, how="outer", on="SKU")
         price_check = pd.merge(price_check, sale_file, how="outer", on="SKU")
         return price_check
@@ -220,9 +238,7 @@ class App(ctk.CTk):
         fba_inventory = self.result_files.get("fba_inventory")
         dictionary = self.result_files.get("dictionary")
 
-        price_check = self.merge_files(
-            dictionary, fba_inventory, sale_file, event_file
-        )
+        price_check = self.merge_files(dictionary, fba_inventory, sale_file, event_file)
         price_check_refined = self.process_file(price_check)
         _ = self.export_to_excel(price_check_refined)
         self.progress.stop()

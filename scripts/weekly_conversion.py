@@ -14,7 +14,7 @@ from common import user_folder
 
 end_of_year = {
     datetime.datetime.strptime(x, "%Y-%m-%d").date()
-    for x in {"2024-12-29", "2024-12-30", "2024-12-31"}
+    for x in {"2025-12-28", "2025-12-29", "2025-12-30", "2025-12-31"}
 }
 results = {}
 
@@ -116,7 +116,7 @@ def break_by_week(result: pd.DataFrame) -> pd.DataFrame:
     result = result[result["week"].isin([last_week, two_weeks])]
     weeks = sorted(
         result["reporting_week"].unique(),
-        key=lambda x: int(x.split("-")[-1]),
+        key=lambda x: (int(x.split("-")[0]), int(x.split("-")[-1])),
         reverse=True,
     )
     for week in weeks:
@@ -175,14 +175,17 @@ def add_totals(result_refined: pd.DataFrame) -> pd.DataFrame:
 def plot_data(df: pd.DataFrame, num_weeks: int = 2) -> BytesIO:
     weeks = sorted(
         df["reporting_week"].unique().tolist(),
-        key=lambda x: int(x.split("-")[-1]),
+        key=lambda x: (int(x.split("-")[0]), int(x.split("-")[-1])),
         reverse=False,
     )
     combined = df.pivot_table(
         values=["sessions", "units"], index="reporting_week", aggfunc="sum"
     ).reset_index()
-    combined = combined.sort_values(
-        "reporting_week", key=lambda x: x.str.split("-").str[-1].astype(int)
+    combined[["sort_year", "sort_week"]] = (
+        combined["reporting_week"].str.split("-", expand=True).astype(int)
+    )
+    combined = combined.sort_values(["sort_year", "sort_week"]).drop(
+        columns=["sort_year", "sort_week"]
     )
     combined["conversion"] = combined["units"] / combined["sessions"]
     fig, ax = plt.subplots(1, 1, figsize=(10, 6))
