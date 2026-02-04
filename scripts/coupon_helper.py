@@ -44,7 +44,9 @@ def main():
         sep = separator.get()
         title = group.get()
         if len(asins) == len(groups):
-            df = pd.DataFrame(list(zip(asins, groups)), columns=["ASIN", "Group"])
+            df = pd.DataFrame(
+                list(zip(asins, groups)), columns=pd.Index(["ASIN", "Group"])
+            )
             df["Title"] = df["Group"] + " " + title
             pivot = df.pivot_table(
                 values="ASIN", index="Title", aggfunc=sep.join

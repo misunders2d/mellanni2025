@@ -7,7 +7,11 @@ from utils import mellanni_modules as mm
 def main():
     matrix_df = size_match.pull_matrix_file()
     dimensions = size_match.main(out=False)
-    if matrix_df is not None and dimensions is not None:
+    if (
+        matrix_df is not None
+        and dimensions is not None
+        and isinstance(matrix_df, pd.DataFrame)
+    ):
         matrix_df = matrix_df.drop_duplicates("sku")
         total = pd.merge(dimensions, matrix_df, how="left", on="sku", validate="1:1")
         total = total[

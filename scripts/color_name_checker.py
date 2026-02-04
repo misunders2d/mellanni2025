@@ -41,7 +41,9 @@ def main():
                     os.path.join(folder, file),
                 ]
             ],
-            columns=["product", "color", "size", "market", "props", "position", "path"],
+            columns=pd.Index(
+                ["product", "color", "size", "market", "props", "position", "path"]
+            ),
         )
         sorted_df = pd.concat([sorted_df, temp_row])
         if product not in products:
@@ -58,17 +60,17 @@ def main():
             sizes[size] += 1
 
     df_products = (
-        pd.DataFrame.from_dict(products, orient="index", columns=["count"])
+        pd.DataFrame.from_dict(products, orient="index", columns=pd.Index(["count"]))
         .reset_index()
         .rename(columns={"index": "product"})
     )
     df_colors = (
-        pd.DataFrame.from_dict(colors, orient="index", columns=["count"])
+        pd.DataFrame.from_dict(colors, orient="index", columns=pd.Index(["count"]))
         .reset_index()
         .rename(columns={"index": "color"})
     )
     df_sizes = (
-        pd.DataFrame.from_dict(sizes, orient="index", columns=["count"])
+        pd.DataFrame.from_dict(sizes, orient="index", columns=pd.Index(["count"]))
         .reset_index()
         .rename(columns={"index": "size"})
     )
