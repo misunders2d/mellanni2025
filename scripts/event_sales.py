@@ -46,8 +46,8 @@ def main():
             title="All orders file", initialdir=user_folder
         )
         sales_thread.join()
-        file = pd.read_csv(path, sep="\t")
-        file = file[file["sales-channel"] == "Amazon.com"]
+        file: pd.DataFrame = pd.read_csv(path, sep="\t")
+        file = file.loc[file["sales-channel"] == "Amazon.com"]
         file["purchase-date"] = pd.to_datetime(file["purchase-date"].copy())
 
         file["pacific-datetime"] = file["purchase-date"].dt.tz_convert("US/Pacific")
