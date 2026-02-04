@@ -65,16 +65,22 @@ def get_weekly_promos(orders):
 
 def get_weekly_promos2(orders):
     # method 2 = week number
+    orders["year"] = pd.to_datetime(orders["pacific_date"]).dt.year
     orders["week"] = orders["pacific_date"].apply(week_number)
-    reporting_weeks = sorted(orders["week"].unique(), reverse=True)[1:5]
-    orders = orders[orders["week"].isin(reporting_weeks)]
+    orders["year-week"] = orders["year"].astype(str) + "-" + orders["week"].astype(str)
+    reporting_weeks = sorted(
+        orders["year-week"].unique(),
+        key=lambda x: (x.split("-")[0], x.split("-")[1]),
+        reverse=True,
+    )[1:5]
+    orders = orders[orders["year-week"].isin(reporting_weeks)]
     weekly_promos = (
-        orders.groupby(["sales_channel", "week"])[["sales", "promo_discount"]]
+        orders.groupby(["sales_channel", "year-week"])[["sales", "promo_discount"]]
         .agg("sum")
         .reset_index()
     )
     weekly_promos = weekly_promos.sort_values(
-        by=["week", "sales_channel"], ascending=[False, True]
+        by=["year-week", "sales_channel"], ascending=[False, True]
     )
     return weekly_promos
 
