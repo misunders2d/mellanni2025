@@ -1,259 +1,210 @@
-import customtkinter as ctk
-from concurrent.futures import ThreadPoolExecutor
-from PIL import Image
+import sys
+import subprocess
+from PySide6.QtWidgets import (
+    QApplication,
+    QMainWindow,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+    QTabWidget,
+    QLabel,
+    QGridLayout,
+)
+from PySide6.QtCore import Qt, QThreadPool, QRunnable, Slot
+from PySide6.QtGui import QPixmap
 
-logo = Image.open("media/mellanni.png")
+
+class Worker(QRunnable):
+    def __init__(self, task_func, on_complete_callback=None):
+        super().__init__()
+        self.task_func = task_func
+        self.on_complete_callback = on_complete_callback
+
+    @Slot()
+    def run(self):
+        try:
+            self.task_func()
+        finally:
+            if self.on_complete_callback:
+                self.on_complete_callback()
 
 
-class MainApp(ctk.CTk):
+class MainApp(QMainWindow):
     xspacing = 10
     yspacing = 10
 
     def __init__(self):
         super().__init__()
-        self.geometry("600x400")
-        self.title("Mellanni tools app")
-        self.executor = ThreadPoolExecutor()
+        self.setWindowTitle("Mellanni tools app")
+        self.setFixedSize(600, 450)
+        self.executor = QThreadPool()
 
-        self.tab_view = ctk.CTkTabview(self, width=600, height=300, anchor="center")
-        self.tab_view.grid(row=0, column=0, sticky="ew")
-        self.reports_frame = self.tab_view.add("Reports")
-        self.tools_frame = self.tab_view.add("Tools")
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        self.main_layout = QVBoxLayout(central_widget)
 
-        # reports section
-        self.price_check_button = ctk.CTkButton(
-            self.reports_frame, text="Price checker", command=self.call_price_checker
+        # --- LOGO SECTION ---
+        self.logo_label = QLabel()
+        pixmap = QPixmap("media/mellanni.png")
+        self.logo_label.setPixmap(
+            pixmap.scaled(
+                300,
+                80,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
         )
-        self.price_check_button.grid(
-            row=0, column=0, padx=self.xspacing, pady=self.yspacing
-        )
-
-        self.weekly_conversion_button = ctk.CTkButton(
-            self.reports_frame,
-            text="Weekly conversion",
-            command=self.call_weekly_conversion,
-        )
-        self.weekly_conversion_button.grid(
-            row=1, column=0, padx=self.xspacing, pady=self.yspacing
+        self.main_layout.addWidget(
+            self.logo_label, alignment=Qt.AlignmentFlag.AlignCenter
         )
 
-        self.restock_button = ctk.CTkButton(
-            self.reports_frame, text="Restock", command=self.call_restock
-        )
-        self.restock_button.grid(
-            row=2, column=0, padx=self.xspacing, pady=self.yspacing
+        # Tab View
+        self.tab_view = QTabWidget()
+        self.main_layout.addWidget(self.tab_view)
+
+        # Setup Tabs
+        self.reports_frame = QWidget()
+        self.tools_frame = QWidget()
+        self.tab_view.addTab(self.reports_frame, "Reports")
+        self.tab_view.addTab(self.tools_frame, "Tools")
+
+        # Layouts for tabs
+        self.reports_layout = QGridLayout(self.reports_frame)
+        self.tools_layout = QGridLayout(self.tools_frame)
+
+        self.setup_widgets()
+
+        # Update button at bottom
+        self.update_button = QPushButton("Update")
+        self.update_button.setStyleSheet("background-color: gray; color: white;")
+        self.update_button.clicked.connect(self.update_git)
+        self.main_layout.addWidget(
+            self.update_button, alignment=Qt.AlignmentFlag.AlignCenter
         )
 
-        # tools section
-        self.coupon_helper_button = ctk.CTkButton(
-            self.tools_frame, text="Coupon helper", command=self.call_coupon_helper
+    def setup_widgets(self):
+        # --- REPORTS SECTION ---
+        self.price_check_button = QPushButton("Price checker")
+        self.price_check_button.clicked.connect(
+            lambda: self.run_task("price_checker", self.price_check_button)
         )
-        self.coupon_helper_button.grid(
-            row=0, column=0, padx=self.xspacing, pady=self.yspacing
-        )
+        self.reports_layout.addWidget(self.price_check_button, 0, 0)
 
-        self.title_check_button = ctk.CTkButton(
-            self.tools_frame, text="Check titles", command=self.call_check_titles
+        self.weekly_conversion_button = QPushButton("Weekly conversion")
+        self.weekly_conversion_button.clicked.connect(
+            lambda: self.run_task("weekly_conversion", self.weekly_conversion_button)
         )
-        self.title_check_button.grid(
-            row=1, column=0, padx=self.xspacing, pady=self.yspacing
-        )
+        self.reports_layout.addWidget(self.weekly_conversion_button, 1, 0)
 
-        self.title_duplicate_check_button = ctk.CTkButton(
-            self.tools_frame,
-            text="Check duplicates in titles",
-            command=self.call_check_title_duplicates,
+        self.restock_button = QPushButton("Restock")
+        self.restock_button.clicked.connect(
+            lambda: self.run_task("restock", self.restock_button)
         )
-        self.title_duplicate_check_button.grid(
-            row=2, column=0, padx=self.xspacing, pady=self.yspacing
-        )
+        self.reports_layout.addWidget(self.restock_button, 2, 0)
 
-        self.flat_file_transfer_button = ctk.CTkButton(
-            self.tools_frame,
-            text="Transfer to new flat file",
-            command=self.call_flat_file_transfer,
+        # --- TOOLS SECTION (COLUMN 0) ---
+        self.coupon_helper_button = QPushButton("Coupon helper")
+        self.coupon_helper_button.clicked.connect(
+            lambda: self.run_task("coupon_helper", self.coupon_helper_button)
         )
-        self.flat_file_transfer_button.grid(
-            row=3, column=0, padx=self.xspacing, pady=self.yspacing
-        )
+        self.tools_layout.addWidget(self.coupon_helper_button, 0, 0)
 
-        self.image_naming_check_button = ctk.CTkButton(
-            self.tools_frame,
-            text="Check image names",
-            command=self.call_image_naming_check,
+        self.title_check_button = QPushButton("Check titles")
+        self.title_check_button.clicked.connect(
+            lambda: self.run_task("check_titles", self.title_check_button)
         )
-        self.image_naming_check_button.grid(
-            row=4, column=0, padx=self.xspacing, pady=self.yspacing
-        )
+        self.tools_layout.addWidget(self.title_check_button, 1, 0)
 
-        self.image_rekognition_button = ctk.CTkButton(
-            self.tools_frame,
-            text="Image Rekognition",
-            command=self.call_image_rekognition,
+        self.title_duplicate_check_button = QPushButton("Check duplicates in titles")
+        self.title_duplicate_check_button.clicked.connect(
+            lambda: self.run_task(
+                "title_duplicates_checker", self.title_duplicate_check_button
+            )
         )
-        self.image_rekognition_button.grid(
-            row=0, column=1, padx=self.xspacing, pady=self.yspacing
-        )
+        self.tools_layout.addWidget(self.title_duplicate_check_button, 2, 0)
 
-        self.marketplace_promos_button = ctk.CTkButton(
-            self.tools_frame,
-            text="Marketplace promos",
-            command=self.call_marketplace_promos,
+        self.flat_file_transfer_button = QPushButton("Transfer to new flat file")
+        self.flat_file_transfer_button.clicked.connect(
+            lambda: self.run_task(
+                "new_template_transfer", self.flat_file_transfer_button
+            )
         )
+        self.tools_layout.addWidget(self.flat_file_transfer_button, 3, 0)
 
-        self.marketplace_promos_button.grid(
-            row=1, column=1, padx=self.xspacing, pady=self.yspacing
+        self.image_naming_check_button = QPushButton("Check image names")
+        self.image_naming_check_button.clicked.connect(
+            lambda: self.run_task("color_name_checker", self.image_naming_check_button)
         )
-        self.event_sales_button = ctk.CTkButton(
-            self.tools_frame,
-            text="Event sales",
-            command=self.call_event_sales,
-        )
-        self.event_sales_button.grid(
-            row=2, column=1, padx=self.xspacing, pady=self.yspacing
-        )
+        self.tools_layout.addWidget(self.image_naming_check_button, 4, 0)
 
-        self.dimensions_button = ctk.CTkButton(
-            self.tools_frame,
-            text="Pull and compare dimensions",
-            command=self.call_dimensions,
+        # --- TOOLS SECTION (COLUMN 1) ---
+        self.image_rekognition_button = QPushButton("Image Rekognition")
+        self.image_rekognition_button.clicked.connect(
+            lambda: self.run_task(
+                "aws_image_rekognition", self.image_rekognition_button
+            )
         )
-        self.dimensions_button.grid(
-            row=2, column=1, padx=self.xspacing, pady=self.yspacing
-        )
+        self.tools_layout.addWidget(self.image_rekognition_button, 0, 1)
 
-        self.oversize_button = ctk.CTkButton(
-            self.tools_frame,
-            text="Check AMZ oversize",
-            command=self.call_oversize,
+        self.marketplace_promos_button = QPushButton("Marketplace promos")
+        self.marketplace_promos_button.clicked.connect(
+            lambda: self.run_task("marketplace_promos", self.marketplace_promos_button)
         )
-        self.oversize_button.grid(
-            row=3, column=1, padx=self.xspacing, pady=self.yspacing
-        )
-        self.bundle_checker_button = ctk.CTkButton(
-            self.tools_frame,
-            text="Check bundle inventory",
-            command=self.call_bundle_checker,
-        )
-        self.bundle_checker_button.grid(
-            row=4, column=1, padx=self.xspacing, pady=self.yspacing
-        )
+        self.tools_layout.addWidget(self.marketplace_promos_button, 1, 1)
 
-        # bottom section
-        self.update_button = ctk.CTkButton(
-            self, text="Update", fg_color="gray", command=self.update
+        self.event_sales_button = QPushButton("Event sales")
+        self.event_sales_button.clicked.connect(
+            lambda: self.run_task("event_sales", self.event_sales_button)
         )
-        self.update_button.grid(row=3, column=0, pady=20)
+        self.tools_layout.addWidget(self.event_sales_button, 2, 1)
 
-    def update(self):
-        import subprocess
+        self.dimensions_button = QPushButton("Pull and compare dimensions")
+        self.dimensions_button.clicked.connect(
+            lambda: self.run_task("dimensions", self.dimensions_button)
+        )
+        self.tools_layout.addWidget(self.dimensions_button, 3, 1)
 
+        self.oversize_button = QPushButton("Check AMZ oversize")
+        self.oversize_button.clicked.connect(
+            lambda: self.run_task("oversize_check", self.oversize_button)
+        )
+        self.tools_layout.addWidget(self.oversize_button, 4, 1)
+
+        self.bundle_checker_button = QPushButton("Check bundle inventory")
+        self.bundle_checker_button.clicked.connect(
+            lambda: self.run_task("bundle_checker", self.bundle_checker_button)
+        )
+        self.tools_layout.addWidget(self.bundle_checker_button, 5, 1)
+
+    def run_task(self, script_name, button, func_name="main"):
+        original_text = button.text()
+        button.setText("Please wait...")
+        button.setEnabled(False)
+
+        def task_logic():
+            try:
+                # Dynamic import inside the thread
+                module = __import__(f"scripts.{script_name}", fromlist=["main"])
+                target_function = getattr(module, func_name)
+                target_function()
+            except Exception as e:
+                print(f"Error in {script_name}: {e}")
+
+        def cleanup():
+            button.setText(original_text)
+            button.setEnabled(True)
+
+        worker = Worker(task_logic, on_complete_callback=cleanup)
+        self.executor.start(worker)
+
+    def update_git(self):
         subprocess.call(["git", "restore", "."])
         subprocess.call(["git", "pull", "-f"])
 
-    def call_image_rekognition(self):
-        from scripts import aws_image_rekognition
-
-        # self.after(200, self.destroy)
-        aws_image_rekognition.main()
-
-    def call_image_naming_check(self):
-        from scripts import color_name_checker
-
-        # self.after(200, self.destroy)
-        color_name_checker.main()
-
-    def call_flat_file_transfer(self):
-        from scripts import new_template_transfer
-
-        # self.after(200, self.destroy)
-        new_template_transfer.main()
-
-    def call_restock(self):
-        from scripts import restock
-
-        # self.after(200, self.destroy)
-        restock.main()
-
-    def call_price_checker(self):
-        from scripts import price_checker
-
-        # self.after(200, self.destroy)
-        price_checker.main()
-
-    def call_weekly_conversion(self):
-        from scripts import weekly_conversion
-
-        # self.after(200, self.destroy)
-        weekly_conversion.main()
-
-    def call_coupon_helper(self):
-        from scripts import coupon_helper
-
-        # self.after(200, self.destroy)
-        coupon_helper.main()
-
-    def call_check_titles(self):
-        from scripts import check_titles
-
-        # self.after(200, self.destroy)
-        check_titles.main()
-
-    def call_check_title_duplicates(self):
-        from scripts import title_duplicates_checker
-
-        # self.after(200, self.destroy)
-        title_duplicates_checker.main()
-        # title_duplicates_checker.run_custom_file()
-
-    def call_marketplace_promos(self):
-        from scripts import marketplace_promos
-
-        # self.after(200, self.destroy)
-        marketplace_promos.main()
-
-    def call_event_sales(self):
-        from scripts import event_sales
-
-        # self.after(200, self.destroy)
-        self.executor.submit(event_sales.main)
-
-    def call_dimensions(self):
-        from scripts import dimensions
-
-        # self.after(200, self.destroy)
-        self.executor.submit(dimensions.main)
-
-    def call_oversize(self):
-        from scripts import oversize_check
-
-        self.executor.submit(oversize_check.main)
-
-    # def call_bundle_checker(self):
-    #     self.bundle_checker_button.configure(text="Please wait, processing...")
-    #     from scripts import bundle_checker
-    #
-    #     self.executor.submit(bundle_checker.main)
-    #     self.bundle_checker_button.configure(text="Check bundle inventory")
-    def call_bundle_checker(self):
-        self.bundle_checker_button.configure(text="Please wait...", state="disabled")
-
-        def run_logic():
-            from scripts import bundle_checker
-
-            bundle_checker.main()
-            self.after(
-                0,
-                lambda: self.bundle_checker_button.configure(
-                    text="Check bundle inventory", state="normal"
-                ),
-            )
-
-        self.executor.submit(run_logic)
-
 
 if __name__ == "__main__":
-    app = MainApp()
-    app.mainloop()
-
-# another change2
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    window = MainApp()
+    window.show()
+    sys.exit(app.exec())

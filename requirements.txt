@@ -1,6 +1,7 @@
 boto3
 customtkinter
 db_dtypes
+easygui
 gdown
 google-api-python-client
 google-cloud
