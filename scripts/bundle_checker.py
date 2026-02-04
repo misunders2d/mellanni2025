@@ -68,7 +68,7 @@ def main():
         mm.export_to_excel(
             dfs=[combined],
             sheet_names=["Bundle inventory"],
-            filename="Bundle inventory",
+            filename="Bundle inventory.xlsx",
             out_folder=user_folder,
         )
         showinfo(

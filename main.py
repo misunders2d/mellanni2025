@@ -229,10 +229,27 @@ class MainApp(ctk.CTk):
 
         self.executor.submit(oversize_check.main)
 
+    # def call_bundle_checker(self):
+    #     self.bundle_checker_button.configure(text="Please wait, processing...")
+    #     from scripts import bundle_checker
+    #
+    #     self.executor.submit(bundle_checker.main)
+    #     self.bundle_checker_button.configure(text="Check bundle inventory")
     def call_bundle_checker(self):
-        from scripts import bundle_checker
+        self.bundle_checker_button.configure(text="Please wait...", state="disabled")
 
-        self.executor.submit(bundle_checker.main)
+        def run_logic():
+            from scripts import bundle_checker
+
+            bundle_checker.main()
+            self.after(
+                0,
+                lambda: self.bundle_checker_button.configure(
+                    text="Check bundle inventory", state="normal"
+                ),
+            )
+
+        self.executor.submit(run_logic)
 
 
 if __name__ == "__main__":
