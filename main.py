@@ -130,6 +130,14 @@ class MainApp(ctk.CTk):
         self.oversize_button.grid(
             row=3, column=1, padx=self.xspacing, pady=self.yspacing
         )
+        self.bundle_checker_button = ctk.CTkButton(
+            self.tools_frame,
+            text="Check bundle inventory",
+            command=self.call_bundle_checker,
+        )
+        self.bundle_checker_button.grid(
+            row=4, column=1, padx=self.xspacing, pady=self.yspacing
+        )
 
         # bottom section
         self.update_button = ctk.CTkButton(
@@ -220,6 +228,11 @@ class MainApp(ctk.CTk):
         from scripts import oversize_check
 
         self.executor.submit(oversize_check.main)
+
+    def call_bundle_checker(self):
+        from scripts import bundle_checker
+
+        self.executor.submit(bundle_checker.main)
 
 
 if __name__ == "__main__":
