@@ -1,27 +1,38 @@
 from common import user_folder
-from utils.mellanni_modules import week_number
+from utils.mellanni_modules import week_number, open_file_folder
+from connectors import gcloud as gc
 import pandas as pd
 import os
 import datetime
-
-file_path = os.path.join(user_folder, "dataset", "orders.csv")
-
-if not os.path.exists(file_path):
-    raise FileNotFoundError(
-        f"\nFile not found: {file_path}\nDon't forget to run the Restock script first."
-    )
-
-orders = pd.read_csv(
-    file_path, usecols=["pacific_date", "sales", "promo_discount", "sales_channel"]
-)
-orders["pacific_date"] = pd.to_datetime(orders["pacific_date"], format="%Y-%m-%d")
-orders = orders[
-    ~orders["sales_channel"].isin(["Amazon.com", "Amazon.ca", "Amazon.com.mx"])
-]
-orders = orders.sort_values(by="pacific_date", ascending=False)
+import easygui
 
 
-def get_weekly_promos():
+def get_orders():
+    query = """
+    SELECT
+        DATETIME(purchase_date, "America/Los_Angeles") AS pacific_date,
+        item_price as sales, item_promotion_discount as promo_discount, sales_channel
+    FROM
+        `mellanni-project-da.reports.all_orders`
+    WHERE
+        DATE(purchase_date, "America/Los_Angeles") BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 60 DAY) AND CURRENT_DATE()
+    ORDER BY
+        pacific_date ASC, sku ASC
+        """
+    with gc.gcloud_connect() as client:
+        orders = client.query(query).to_dataframe()
+
+    orders["pacific_date"] = pd.to_datetime(
+        orders["pacific_date"], format="%Y-%m-%d"
+    ).dt.date
+    # orders = orders[
+    #     ~orders["sales_channel"].isin(["Amazon.com", "Amazon.ca", "Amazon.com.mx"])
+    # ]
+    orders = orders.sort_values(by="pacific_date", ascending=False)
+    return orders
+
+
+def get_weekly_promos(orders):
     # method 1 = last sunday
     last_sunday = (
         datetime.datetime.now()
@@ -30,7 +41,7 @@ def get_weekly_promos():
 
     sundays = [last_sunday]
 
-    for i in range(3):
+    for _ in range(3):
         last_sunday = last_sunday - datetime.timedelta(days=7)
         sundays.append(last_sunday)
 
@@ -69,17 +80,18 @@ def get_weekly_promos2(orders):
 
 
 def main():
-    weekly_promos_df = get_weekly_promos2(orders)
+    try:
+        orders = get_orders()
+        weekly_promos_df = get_weekly_promos2(orders)
 
-    output_dir = r"C:\Users\Bogdan\temp\dataset"
+        file_name = "weekly_marketplace_promos.csv"
+        file_path = os.path.join(user_folder, file_name)
 
-    # Create output directory if it doesn't exist
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+        weekly_promos_df.to_csv(file_path, index=False)
 
-    file_name = "weekly_marketplace_promos.csv"
-    file_path = os.path.join(output_dir, file_name)
-
-    weekly_promos_df.to_csv(file_path, index=False)
-
-    print(f"Successfully saved the report to {file_path}")
+        easygui.msgbox(
+            msg=f"Successfully saved the report to {file_path}", title="Success"
+        )
+        open_file_folder(file_path)
+    except Exception as e:
+        easygui.exceptionbox(msg=f"Error: {e}", title="Error")

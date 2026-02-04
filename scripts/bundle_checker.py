@@ -3,7 +3,8 @@ from connectors import gcloud as gc
 import pandas as pd
 from utils import mellanni_modules as mm
 from common import user_folder
-from tkinter.messagebox import showinfo, showerror
+import easygui
+
 
 DICTIONARY_ID = "1Y4XhSBCXqmEVHHOnugEpzZZ3NQ5ZRGOlp-AsTE0KmRE"
 
@@ -71,9 +72,10 @@ def main():
             filename="Bundle inventory.xlsx",
             out_folder=user_folder,
         )
-        showinfo(
-            title="Success", message=f"File has been saved to your {user_folder} folder"
+        easygui.msgbox(
+            title="Success",
+            msg=f"File has been saved to your {user_folder} folder",
         )
         mm.open_file_folder(user_folder)
     except Exception as e:
-        showerror(title="Error", message=f"Error: {e}")
+        easygui.exceptionbox(title="Error", msg=f"Error: {e}")
