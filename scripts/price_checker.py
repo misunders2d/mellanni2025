@@ -1,12 +1,12 @@
-from common import excluded_collections, user_folder
-
-import pandas as pd
-import numpy as np
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from connectors.gcloud import gcloud_connect
-from connectors import gdrive as dm
+
 import customtkinter as ctk
+import numpy as np
+import pandas as pd
+from common import excluded_collections, user_folder
+from connectors import gdrive as dm
+from connectors.gcloud import gcloud_connect
 from utils import mellanni_modules as mm
 
 BQ_BUSINESS_REPORT: str = "reports.business_report"
@@ -74,6 +74,7 @@ class App(ctk.CTk):
                 usecols=[
                     "snapshot-date",
                     "sku",
+                    "asin",
                     "available",
                     "your-price",
                     "sales-price",
@@ -109,7 +110,7 @@ class App(ctk.CTk):
                 AND LOWER(condition) = "new"
                 AND snapshot_date >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {num_days} DAY)
             )            
-            SELECT DATE(snapshot_date) as snapshot_date, sku as SKU, available, your_price, sales_price
+            SELECT DATE(snapshot_date) as snapshot_date, sku as SKU, asin, available, your_price, sales_price
             FROM RecentSnapshots
             WHERE rn=1
             """
@@ -126,6 +127,7 @@ class App(ctk.CTk):
         dictionary = dictionary_spreadsheet[
             [
                 "SKU",
+                "ASIN",
                 "Collection",
                 "Sub-collection",
                 "Size Map",
@@ -158,8 +160,12 @@ class App(ctk.CTk):
     def merge_files(self, dictionary, fba_inventory, sale_file, event_file):
         self.print_area.insert(ctk.END, text="Merging files\n")
 
-        price_check = pd.merge(dictionary, fba_inventory, how="outer", on="SKU")
-        price_check = pd.merge(price_check, sale_file, how="outer", on="SKU")
+        price_check = pd.merge(
+            dictionary, fba_inventory, how="outer", on="SKU", validate="1:1"
+        )
+        price_check = pd.merge(
+            price_check, sale_file, how="outer", on="SKU", validate="1:1"
+        )
         return price_check
 
     def process_file(self, price_check):
@@ -240,6 +246,10 @@ class App(ctk.CTk):
 
         price_check = self.merge_files(dictionary, fba_inventory, sale_file, event_file)
         price_check_refined = self.process_file(price_check)
+        price_check_refined["ASIN"] = price_check_refined["ASIN"].combine_first(
+            price_check_refined["asin"]
+        )
+        del price_check_refined["asin"]
         _ = self.export_to_excel(price_check_refined)
         self.progress.stop()
 
