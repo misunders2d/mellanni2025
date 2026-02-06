@@ -37,6 +37,7 @@ helper-modules = { git = "https://github.com/misunders2d/helper-modules.git", re
 [dependency-groups]
 dev = [
     "easygui>=0.98.3",
+    "ipython>=9.10.0",
     "pymsgbox>=2.0.1",
     "pyside6>=6.10.1",
 ]

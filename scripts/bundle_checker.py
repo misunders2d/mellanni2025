@@ -1,10 +1,9 @@
-from connectors import gdrive as gd
-from connectors import gcloud as gc
-import pandas as pd
-from utils import mellanni_modules as mm
-from common import user_folder
 import easygui
-
+import pandas as pd
+from common import user_folder
+from connectors import gcloud as gc
+from connectors import gdrive as gd
+from utils import mellanni_modules as mm
 
 DICTIONARY_ID = "1Y4XhSBCXqmEVHHOnugEpzZZ3NQ5ZRGOlp-AsTE0KmRE"
 
@@ -13,8 +12,10 @@ def get_dictionary():
     dictionary = gd.download_gspread(spreadsheet_id=DICTIONARY_ID, sheet_id=359795095)
     index_cols = ["Bundle SKU", "Bundle ASIN"]
     dictionary = dictionary.drop_duplicates(index_cols)
+
     sku_cols = [x for x in dictionary.columns if "Included SKU" in x]
     asin_cols = [x for x in dictionary.columns if "Included ASIN" in x]
+
     dictionary_stacked = pd.lreshape(
         data=dictionary.loc[:, index_cols + sku_cols + asin_cols],
         groups={"SKU": sku_cols, "ASIN": asin_cols},
