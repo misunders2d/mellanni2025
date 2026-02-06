@@ -13,11 +13,13 @@ def get_dictionary():
     index_cols = ["Bundle SKU", "Bundle ASIN"]
     dictionary = dictionary.drop_duplicates(index_cols)
 
-    sku_cols = [x for x in dictionary.columns if "Included SKU" in x]
+    sku_cols = [col for col in dictionary.columns if "Included SKU" in col]
     asin_cols = [x for x in dictionary.columns if "Included ASIN" in x]
 
+    dictionary = dictionary.loc[:, index_cols + sku_cols + asin_cols]
+
     dictionary_stacked = pd.lreshape(
-        data=dictionary.loc[:, index_cols + sku_cols + asin_cols],
+        data=dictionary,
         groups={"SKU": sku_cols, "ASIN": asin_cols},
     ).reset_index(drop=True)
     dictionary_stacked = dictionary_stacked.dropna(subset="SKU")
@@ -50,14 +52,22 @@ def get_amazon_inventory(marketplace="US", num_days=3):
 
 
 def combine_files(dictionary_stacked, inventory):
-    combined = pd.merge(dictionary_stacked, inventory, how="left", on="SKU")
+    combined = pd.merge(
+        dictionary_stacked, inventory, how="left", on="SKU", validate="m:1"
+    )
     combined["available"] = combined["available"].fillna(0)
+    combined["snapshot_date"] = combined["snapshot_date"].astype(str).fillna(0)
+
     combined["SKU inventory"] = (
         combined["SKU"].astype(str) + ": " + combined["available"].astype(str)
     )
     summary = combined.pivot_table(
         index=["Bundle SKU", "Bundle ASIN"],
-        aggfunc={"available": "min", "SKU inventory": lambda x: ", ".join(x.unique())},
+        aggfunc={
+            "available": "min",
+            "SKU inventory": lambda x: ", ".join(x.unique()),
+            "snapshot_date": lambda x: ", ".join(sorted(x.unique())),
+        },
     ).reset_index()
     return summary
 
@@ -67,6 +77,7 @@ def main():
         dictionary_stacked = get_dictionary()
         inventory = get_amazon_inventory()
         combined = combine_files(dictionary_stacked, inventory)
+        combined = combined.sort_values("Bundle ASIN")
         mm.export_to_excel(
             dfs=[combined],
             sheet_names=["Bundle inventory"],
@@ -80,3 +91,7 @@ def main():
         mm.open_file_folder(user_folder)
     except Exception as e:
         easygui.exceptionbox(title="Error", msg=f"Error: {e}")
+
+
+if __name__ == "__main__":
+    main()
