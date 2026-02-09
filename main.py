@@ -1,17 +1,18 @@
-import sys
 import subprocess
+import sys
+
+from PySide6.QtCore import QRunnable, Qt, QThreadPool, Slot
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QApplication,
+    QGridLayout,
+    QLabel,
     QMainWindow,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
-    QTabWidget,
-    QLabel,
-    QGridLayout,
 )
-from PySide6.QtCore import Qt, QThreadPool, QRunnable, Slot
-from PySide6.QtGui import QPixmap
 
 
 class Worker(QRunnable):
@@ -175,6 +176,12 @@ class MainApp(QMainWindow):
             lambda: self.run_task("bundle_checker", self.bundle_checker_button)
         )
         self.tools_layout.addWidget(self.bundle_checker_button, 5, 1)
+
+        self.push_dictionary_button = QPushButton("Push dictionary to BQ")
+        self.push_dictionary_button.clicked.connect(
+            lambda: self.run_task("push_dictionary", self.push_dictionary_button)
+        )
+        self.tools_layout.addWidget(self.push_dictionary_button, 5, 0)
 
     def run_task(self, script_name, button, func_name="main"):
         original_text = button.text()
