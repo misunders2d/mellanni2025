@@ -1,25 +1,28 @@
-from connectors import gdrive as gd
-from common import user_folder
-from utils import mellanni_modules as mm
-import pandas as pd
 import datetime
 import re
 
+import pandas as pd
+from common import user_folder
+from connectors import gdrive as gd
+from utils import mellanni_modules as mm
 
 DRIVE_ID = "0AMdx9NlXacARUk9PVA"
 LOST_SALES_FOLDER = "1pgnXoZO48hog7ciKNEHu1U7r2I7kGqf4"
 
 
-def get_dates(today:datetime.date):
-    start_date = today - pd.Timedelta(days = today.weekday()+8)
-    end_date = today - pd.Timedelta(days = today.weekday()+2)
-    return pd.date_range(start=start_date, end = end_date)
+def get_dates(today: datetime.date):
+    start_date = today - datetime.timedelta(days=today.weekday() + 8)
+    end_date = today - datetime.timedelta(days=today.weekday() + 2)
+    return [
+        x.date().strftime("%Y-%m-%d")
+        for x in pd.date_range(start=start_date, end=end_date)
+    ]
+
 
 def main(dates):
     files = gd.list_files_in_folder(folder_id=LOST_SALES_FOLDER, drive_id=DRIVE_ID)
     excel_files = [x for x in files if x.endswith(".xlsx")]
     files_to_use = {excel_file: files[excel_file] for excel_file in excel_files}
-
 
     weekly_files = []
     for file in files_to_use:
@@ -55,10 +58,9 @@ def main(dates):
 
 
 if __name__ == "__main__":
-    today = pd.to_datetime('today').date()
-    # dates = pd.date_range("2026-01-11", "2026-01-17")
+    today = datetime.datetime.now().date()
     dates = get_dates(today)
-    print(f"Calculating lost sales for {dates[0].date()} - {dates[-1].date()}")
+    print(f"Calculating lost sales for {dates[0]} - {dates[-1]}")
 
-    main(dates = dates)
+    main(dates=dates)
     print("All done")
