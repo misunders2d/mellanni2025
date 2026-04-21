@@ -22,6 +22,8 @@ probable_triggers = [
     "bacter",
     "baseb",
     "contam",
+    "designed in",
+    "USA",
     "deterior",
     "disinfect",
     "dust ",

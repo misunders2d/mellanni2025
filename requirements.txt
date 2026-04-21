@@ -8,6 +8,7 @@ google-cloud
 google-cloud-storage
 google-cloud-bigquery-storage
 gspread
+fastapi
 fuzzywuzzy
 inflect
 matplotlib
