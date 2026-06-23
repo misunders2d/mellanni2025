@@ -17,6 +17,11 @@
       "details": ""
     },
     {
+      "name": "html_has_top_asin_table",
+      "status": "pass",
+      "details": "CEO body must include visible Top ASIN table, not only a workbook pointer"
+    },
+    {
       "name": "html_uses_ld_not_unk",
       "status": "pass",
       "details": "UNK absent from CEO HTML"
