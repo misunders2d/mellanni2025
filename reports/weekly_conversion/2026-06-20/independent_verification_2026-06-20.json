@@ -1,0 +1,86 @@
+{
+  "status": "pass",
+  "checks": [
+    {
+      "name": "workbook_zipfile",
+      "status": "pass",
+      "details": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-06-20/Mellanni_Weekly_CEO_Overview_2026-06-20.xlsx"
+    },
+    {
+      "name": "html_has_prepared_band",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "html_has_top_promo_section",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "html_uses_ld_not_unk",
+      "status": "pass",
+      "details": "UNK absent from CEO HTML"
+    },
+    {
+      "name": "html_pp_columns_formatted",
+      "status": "pass",
+      "details": "percentage-point columns should not show raw decimal fractions"
+    },
+    {
+      "name": "br_gross_matches_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "sessions_match_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "units_match_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "conversion_matches_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "net_item_sales_matches_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "item_promo_discount_matches_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "product_sales_sum_matches_br",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "asin_sales_sum_matches_br",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "top_asin_size_color_non_numeric",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "keyword_rows_present",
+      "status": "pass",
+      "details": "rows=100"
+    },
+    {
+      "name": "promo_rows_present",
+      "status": "pass",
+      "details": "rows=25"
+    }
+  ],
+  "control_file": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-06-20/independent_control_totals.csv"
+}
