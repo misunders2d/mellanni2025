@@ -36,6 +36,7 @@ def main() -> int:
     check(checks, "workbook_zipfile", zipfile.is_zipfile(xlsx_path), str(xlsx_path))
     check(checks, "html_has_prepared_band", "Prepared by Sergey's AI helper." in html)
     check(checks, "html_has_top_promo_section", "Top promo discounts" in html)
+    check(checks, "html_has_top_asin_table", "Top ASINs" in html and "B00NLLUMOE" in html and "See attached workbook for full Top ASINs table" not in html, "CEO body must include visible Top ASIN table, not only a workbook pointer")
     check(checks, "html_uses_ld_not_unk", "UNK" not in html, "UNK absent from CEO HTML")
     check(checks, "html_pp_columns_formatted", " pp" in html and "0.0018849879539747" not in html and "0.006745349644595826" not in html, "percentage-point columns should not show raw decimal fractions")
     check(checks, "br_gross_matches_control", abs(metrics["gross_sales"] - float(ctrl["br_current_gross_sales"])) < 0.01)

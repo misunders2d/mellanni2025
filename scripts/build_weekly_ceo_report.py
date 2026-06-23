@@ -349,7 +349,7 @@ def render_html(context: dict[str, Any]) -> str:
     bullets = [
         f"Gross sales were {fmt_money(m['gross_sales'])}, {sales_delta}; net item sales were {fmt_money(m['net_item_sales'])} after {fmt_money(m['item_promo_discount'])} in item promo discounts.",
         f"Sessions fell to {fmt_int(m['sessions'])} while conversion improved to {fmt_pct(m['conversion'], 2)} ({conv_delta}).",
-        f"Item promo discount rate was {fmt_pct(promo_rate, 1)}; shipping promo discounts ({fmt_money(m['shipping_promo_discount_excluded'])}) are excluded from product net sales.",
+        f"Item promo discount rate was {fmt_pct(promo_rate, 1)}. Shipment/shipping promotions are not product promotions and are excluded from this CEO promotion view.",
     ]
     if top_product is not None:
         bullets.append(f"Top collection remained {escape(str(top_product['collection']))} at {fmt_money(top_product['sales'])} and {fmt_pct(top_product['unit_conversion'], 2)} conversion.")
@@ -409,7 +409,7 @@ def render_html(context: dict[str, Any]) -> str:
 
   <h2 style="font-size:18px;margin:18px 0 8px">Product / collection conversion change</h2>{product_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Top ASINs</h2>{asin_table}
-  <h2 style="font-size:18px;margin:18px 0 8px">Top promo discounts</h2><p style="font-size:12px;color:#667085">Net item sales deduct item promo discounts only. Shipping promotions are excluded from product net sales. Blank/unknown Amazon promo labels are displayed as LD.</p>{promo_table}
+  <h2 style="font-size:18px;margin:18px 0 8px">Top promo discounts</h2><p style="font-size:12px;color:#667085">Net item sales deduct item promo discounts only. Shipment/shipping promotions are not product promotions and are not included in this CEO promotion view. Blank/unknown Amazon promo labels are displayed as LD.</p>{promo_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Tracked SQP keyword standings</h2>{keyword_table}
   <p style="font-size:12px;color:#667085;margin-top:16px">Full workbook attached.</p>
 </div>
