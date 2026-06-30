@@ -366,7 +366,10 @@ def render_html(context: dict[str, Any]) -> str:
         f"<tr><td style='padding:6px'>{escape(str(r.week_end))}</td><td style='padding:6px'>{html_bar(r.gross_sales, max_sales, '#2563eb')}</td><td style='padding:6px;text-align:right'>{fmt_money(r.gross_sales)}</td><td style='padding:6px;text-align:right'>{fmt_int(r.sessions)}</td><td style='padding:6px;text-align:right'>{fmt_int(r.units)}</td><td style='padding:6px;text-align:right'>{fmt_pct(r.unit_conversion, 2)}</td></tr>"
         for r in trend.itertuples(index=False)
     )
-    product_delta = context["products"].copy().sort_values("sales_delta").head(8)
+    product_delta = context["products"].copy()
+    product_delta = product_delta[product_delta["sales_delta"].abs() > 0.5]
+    product_delta["abs_sales_delta"] = product_delta["sales_delta"].abs()
+    product_delta = product_delta.sort_values("abs_sales_delta", ascending=False).head(8)
     max_delta = product_delta["sales_delta"].abs().max() if len(product_delta) else 0
     product_rows = "".join(
         f"<tr><td style='padding:6px'>{escape(str(r.collection))}</td><td style='padding:6px'>{html_bar(r.sales_delta, max_delta, '#b91c1c' if r.sales_delta < 0 else '#0f8a4b')}</td><td style='padding:6px;text-align:right;color:{'#b91c1c' if r.sales_delta < 0 else '#0f8a4b'}'>{fmt_money(r.sales_delta)}</td></tr>"
@@ -407,7 +410,7 @@ def render_html(context: dict[str, Any]) -> str:
 
   <h2 style="font-size:20px;margin:20px 0 10px">Charts</h2>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare gross sales within this two-week view.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div>
-  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Current minus prior sales; red = decline, green = gain.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div>
+  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Largest collection movers by absolute WoW sales delta; red = decline, green = gain.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>SQP keyword rank movement</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Lower organic rank number is better: green ↓ = improved, red ↑ = worsened.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
 
   <h2 style="font-size:18px;margin:18px 0 8px">Product / collection conversion change</h2>{product_table}
