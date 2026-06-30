@@ -32,6 +32,11 @@
       "details": "percentage-point columns should not show raw decimal fractions"
     },
     {
+      "name": "html_narrative_signs_match_metrics",
+      "status": "pass",
+      "details": "bullet wording must match metric direction"
+    },
+    {
       "name": "br_gross_matches_control",
       "status": "pass",
       "details": ""
