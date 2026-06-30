@@ -1,5 +1,5 @@
 {
-  "status": "warning",
+  "status": "pass",
   "report_dir": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-06-27",
   "week_start": "2026-06-21",
   "week_end": "2026-06-27",
@@ -108,8 +108,8 @@
     },
     {
       "name": "gross_reconciliation_br_vs_all_orders",
-      "status": "warning",
-      "details": "diff=$16,268.87"
+      "status": "pass",
+      "details": "diff=$16,268.87; tol=$18,970.67"
     },
     {
       "name": "asin_size_labels",

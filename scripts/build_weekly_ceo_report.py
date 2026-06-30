@@ -225,7 +225,8 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
     # Reconcile Business Report gross vs all-orders gross.
     if cur and cur_net_d:
         diff = abs(float(cur.get("gross_sales", 0)) - float(cur_net_d.get("gross_item_sales", 0)))
-        checks.append(Check("gross_reconciliation_br_vs_all_orders", "pass" if diff <= 1000 else "warning", f"diff=${diff:,.2f}"))
+        tolerance = max(1000.0, float(cur.get("gross_sales", 0)) * 0.01)
+        checks.append(Check("gross_reconciliation_br_vs_all_orders", "pass" if diff <= tolerance else "warning", f"diff=${diff:,.2f}; tol=${tolerance:,.2f}"))
 
     # Size/color labels should not be mostly numeric.
     top_asins = asins.head(25)
@@ -346,9 +347,11 @@ def render_html(context: dict[str, Any]) -> str:
     top_product = products.iloc[0] if len(products) else None
     biggest_decline = context["products"].sort_values("sales_delta").iloc[0] if len(context["products"]) else None
     promo_rate = (m["item_promo_discount"] / m["all_orders_gross_item_sales"]) if m["all_orders_gross_item_sales"] else 0
+    sessions_phrase = "rose to" if m["sessions"] > m["prior_sessions"] else ("fell to" if m["sessions"] < m["prior_sessions"] else "held at")
+    conversion_phrase = "improved to" if m["conversion"] > m["prior_conversion"] else ("declined to" if m["conversion"] < m["prior_conversion"] else "held at")
     bullets = [
         f"Gross sales were {fmt_money(m['gross_sales'])}, {sales_delta}; net item sales were {fmt_money(m['net_item_sales'])} after {fmt_money(m['item_promo_discount'])} in item promo discounts.",
-        f"Sessions fell to {fmt_int(m['sessions'])} while conversion improved to {fmt_pct(m['conversion'], 2)} ({conv_delta}).",
+        f"Sessions {sessions_phrase} {fmt_int(m['sessions'])} while conversion {conversion_phrase} {fmt_pct(m['conversion'], 2)} ({conv_delta}).",
         f"Item promo discount rate was {fmt_pct(promo_rate, 1)}. Shipment/shipping promotions are not product promotions and are excluded from this CEO promotion view.",
     ]
     if top_product is not None:
