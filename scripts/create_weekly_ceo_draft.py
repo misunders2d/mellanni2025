@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 HELPER = Path("/home/misunderstood/.pi/agent/extensions/google_workspace_sa.py")
 DEFAULT_RECIPIENTS = [
     "igor@mellanni.com",
@@ -35,8 +37,6 @@ def main() -> int:
         "Top ASINs",
         "Top promo discounts",
         "Tracked SQP keyword standings",
-        "B00NLLUMOE",
-        "BESTSHEETS10",
     ]
     missing = [s for s in required if s not in html]
     if missing:
@@ -45,6 +45,18 @@ def main() -> int:
         raise SystemExit("HTML still has shortened Top ASIN placeholder")
     if not xlsx_path.exists():
         raise SystemExit(f"Missing workbook: {xlsx_path}")
+
+    asins = pd.read_csv(report_dir / "asin_performance_size_color.csv")
+    promos = pd.read_csv(report_dir / "top_promo_discounts.csv")
+    top_asin = str(asins.iloc[0]["asin"]) if len(asins) else None
+    promo_label = None
+    if len(promos):
+        non_ld = promos[promos["promo_label"].astype(str).str.upper() != "LD"]
+        promo_label = str((non_ld.iloc[0] if len(non_ld) else promos.iloc[0])["promo_label"])
+    if top_asin and top_asin not in html:
+        raise SystemExit(f"HTML missing top ASIN marker: {top_asin}")
+    if promo_label and promo_label not in html:
+        raise SystemExit(f"HTML missing top promo marker: {promo_label}")
 
     payload = {
         "confirm_write": True,
