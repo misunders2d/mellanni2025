@@ -222,10 +222,11 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
     else:
         checks.append(Check("validation_row", "fail", "validation.csv empty"))
 
-    # Reconcile Business Report gross vs all-orders gross.
+    # Reconcile Business Report gross control vs all-orders gross KPI.
     if cur and cur_net_d:
-        diff = abs(float(cur.get("gross_sales", 0)) - float(cur_net_d.get("gross_item_sales", 0)))
-        tolerance = max(1000.0, float(cur.get("gross_sales", 0)) * 0.01)
+        br_gross_for_control = float(cur.get("br_gross_sales_control", cur.get("gross_sales", 0)) or 0)
+        diff = abs(br_gross_for_control - float(cur_net_d.get("gross_item_sales", 0)))
+        tolerance = max(1000.0, br_gross_for_control * 0.01)
         checks.append(Check("gross_reconciliation_br_vs_all_orders", "pass" if diff <= tolerance else "warning", f"diff=${diff:,.2f}; tol=${tolerance:,.2f}"))
 
     # Size/color labels should not be mostly numeric.
@@ -238,9 +239,18 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
     promos = promos.sort_values("item_promo_discount", ascending=False)
     keywords = keywords.sort_values("est_total_keyword_sales", ascending=False)
 
+    current_ao_gross = float(cur_net_d.get("gross_item_sales", 0) or 0)
+    prior_ao_gross = float(prior_net_d.get("gross_item_sales", 0) or 0)
+    current_br_gross = float(cur.get("br_gross_sales_control", cur.get("gross_sales", 0)) or 0)
+    prior_br_gross = float(prior.get("br_gross_sales_control", prior.get("gross_sales", 0)) or 0)
+
+    # CEO gross-sales KPI must use all-orders gross item sales when available.
+    # Business Report gross is discounted/definition-shifted and remains control-only.
     metrics = {
-        "gross_sales": float(cur.get("gross_sales", 0) or 0),
-        "prior_gross_sales": float(prior.get("gross_sales", 0) or 0),
+        "gross_sales": current_ao_gross,
+        "prior_gross_sales": prior_ao_gross,
+        "br_gross_sales": current_br_gross,
+        "prior_br_gross_sales": prior_br_gross,
         "sessions": float(cur.get("sessions", 0) or 0),
         "prior_sessions": float(prior.get("sessions", 0) or 0),
         "units": float(cur.get("units", 0) or 0),
@@ -251,8 +261,34 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
         "prior_net_item_sales": float(prior_net_d.get("net_item_sales", 0) or 0),
         "item_promo_discount": float(cur_net_d.get("item_promo_discount", 0) or 0),
         "shipping_promo_discount_excluded": float(cur_net_d.get("shipping_promo_discount_excluded", 0) or 0),
-        "all_orders_gross_item_sales": float(cur_net_d.get("gross_item_sales", 0) or 0),
+        "all_orders_gross_item_sales": current_ao_gross,
     }
+
+    if metrics["gross_sales"] and metrics["net_item_sales"]:
+        checks.append(Check(
+            "gross_sales_kpi_from_all_orders",
+            "pass" if abs(metrics["gross_sales"] - metrics["all_orders_gross_item_sales"]) < 0.01 else "fail",
+            "Gross Sales KPI uses all-orders gross_item_sales",
+        ))
+        checks.append(Check(
+            "gross_sales_gte_net_item_sales",
+            "pass" if metrics["gross_sales"] + 0.01 >= metrics["net_item_sales"] else "fail",
+            f"gross={metrics['gross_sales']:,.2f}; net={metrics['net_item_sales']:,.2f}",
+        ))
+        expected_net = metrics["gross_sales"] - metrics["item_promo_discount"]
+        checks.append(Check(
+            "net_item_sales_formula",
+            "pass" if abs(expected_net - metrics["net_item_sales"]) < 0.05 else "fail",
+            f"gross-item_promo={expected_net:,.2f}; net={metrics['net_item_sales']:,.2f}",
+        ))
+
+    ao_gross_by_week = {
+        str(dates["week_end"]): current_ao_gross,
+        str(dates["prior_end"]): prior_ao_gross,
+    }
+    if len(trend) and current_ao_gross and prior_ao_gross:
+        trend["br_gross_sales_control"] = trend["gross_sales"]
+        trend["gross_sales"] = trend["week_end"].astype(str).map(ao_gross_by_week).fillna(trend["gross_sales"])
 
     context = {
         "dates": {k: str(v) for k, v in dates.items()},
@@ -409,7 +445,7 @@ def render_html(context: dict[str, Any]) -> str:
   <ul style="margin:8px 0 16px;padding-left:22px;line-height:1.45">{''.join(f'<li>{b}</li>' for b in bullets)}</ul>
 
   <h2 style="font-size:20px;margin:20px 0 10px">Charts</h2>
-  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare gross sales within this two-week view.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div>
+  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare all-orders gross item sales within this two-week view.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Largest collection movers by absolute WoW sales delta; red = decline, green = gain.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>SQP keyword rank movement</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Lower organic rank number is better: green ↓ = improved, red ↑ = worsened.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
 
@@ -426,8 +462,9 @@ def write_workbook(context: dict[str, Any], out: Path) -> None:
     with pd.ExcelWriter(out, engine="openpyxl") as writer:
         summary_rows = [
             {"Metric": "Week ending", "Value": context["dates"]["week_end"]},
-            {"Metric": "Gross sales (Business Report)", "Value": context["metrics"]["gross_sales"]},
+            {"Metric": "Gross sales (all-orders)", "Value": context["metrics"]["gross_sales"]},
             {"Metric": "Net item sales (all-orders)", "Value": context["metrics"]["net_item_sales"]},
+            {"Metric": "Business Report gross (control)", "Value": context["metrics"].get("br_gross_sales", 0)},
             {"Metric": "Item promo discount", "Value": context["metrics"]["item_promo_discount"]},
             {"Metric": "Shipping promo discount excluded", "Value": context["metrics"]["shipping_promo_discount_excluded"]},
             {"Metric": "Sessions", "Value": context["metrics"]["sessions"]},

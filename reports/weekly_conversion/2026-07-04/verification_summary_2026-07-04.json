@@ -1,0 +1,157 @@
+{
+  "status": "pass",
+  "report_dir": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-07-04",
+  "week_start": "2026-06-28",
+  "week_end": "2026-07-04",
+  "prior_start": "2026-06-21",
+  "prior_end": "2026-06-27",
+  "outputs": {
+    "xlsx": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-07-04/Mellanni_Weekly_CEO_Overview_2026-07-04.xlsx",
+    "html": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-07-04/email_body_2026-07-04.html",
+    "verification": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-07-04/verification_summary_2026-07-04.json"
+  },
+  "checks": [
+    {
+      "name": "file:validation.csv",
+      "status": "pass",
+      "details": "rows=1"
+    },
+    {
+      "name": "columns:validation.csv",
+      "status": "pass",
+      "details": "ok"
+    },
+    {
+      "name": "file:conversion_trend.csv",
+      "status": "pass",
+      "details": "rows=2"
+    },
+    {
+      "name": "columns:conversion_trend.csv",
+      "status": "pass",
+      "details": "ok"
+    },
+    {
+      "name": "file:product_performance.csv",
+      "status": "pass",
+      "details": "rows=30"
+    },
+    {
+      "name": "columns:product_performance.csv",
+      "status": "pass",
+      "details": "ok"
+    },
+    {
+      "name": "file:asin_performance_size_color.csv",
+      "status": "pass",
+      "details": "rows=1381"
+    },
+    {
+      "name": "columns:asin_performance_size_color.csv",
+      "status": "pass",
+      "details": "ok"
+    },
+    {
+      "name": "file:tracked_sqp_keywords.csv",
+      "status": "pass",
+      "details": "rows=87"
+    },
+    {
+      "name": "columns:tracked_sqp_keywords.csv",
+      "status": "pass",
+      "details": "ok"
+    },
+    {
+      "name": "file:net_sales_summary.csv",
+      "status": "pass",
+      "details": "rows=2"
+    },
+    {
+      "name": "columns:net_sales_summary.csv",
+      "status": "pass",
+      "details": "ok"
+    },
+    {
+      "name": "file:top_promo_discounts.csv",
+      "status": "pass",
+      "details": "rows=6"
+    },
+    {
+      "name": "columns:top_promo_discounts.csv",
+      "status": "pass",
+      "details": "ok"
+    },
+    {
+      "name": "promo_ld_normalization",
+      "status": "pass",
+      "details": "raw_unknown_labels=1 remaining_unknown=0"
+    },
+    {
+      "name": "trend_week_rows",
+      "status": "pass",
+      "details": "current and prior rows present"
+    },
+    {
+      "name": "net_sales_period_rows",
+      "status": "pass",
+      "details": "current and prior net rows present"
+    },
+    {
+      "name": "business_report_days",
+      "status": "pass",
+      "details": "min=2026-06-21 max=2026-07-04"
+    },
+    {
+      "name": "negative_metrics",
+      "status": "pass",
+      "details": "negative_metric_rows=0"
+    },
+    {
+      "name": "gross_reconciliation_br_vs_all_orders",
+      "status": "pass",
+      "details": "diff=$118.47; tol=$4,151.15"
+    },
+    {
+      "name": "asin_size_labels",
+      "status": "pass",
+      "details": "numeric_size_rows_top25=0"
+    },
+    {
+      "name": "gross_sales_kpi_from_all_orders",
+      "status": "pass",
+      "details": "Gross Sales KPI uses all-orders gross_item_sales"
+    },
+    {
+      "name": "gross_sales_gte_net_item_sales",
+      "status": "pass",
+      "details": "gross=415,233.13; net=409,729.49"
+    },
+    {
+      "name": "net_item_sales_formula",
+      "status": "pass",
+      "details": "gross-item_promo=409,729.49; net=409,729.49"
+    },
+    {
+      "name": "workbook_zip",
+      "status": "pass",
+      "details": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-07-04/Mellanni_Weekly_CEO_Overview_2026-07-04.xlsx"
+    }
+  ],
+  "metrics": {
+    "gross_sales": 415233.1300000046,
+    "prior_gross_sales": 1901429.2000000435,
+    "br_gross_sales": 415114.659999988,
+    "prior_br_gross_sales": 1896076.0899999607,
+    "sessions": 157412.0,
+    "prior_sessions": 1123237.0,
+    "units": 11131.0,
+    "prior_units": 58138.0,
+    "conversion": 0.0707125250933855,
+    "prior_conversion": 0.0517593348509709,
+    "net_item_sales": 409729.4900000046,
+    "prior_net_item_sales": 1886723.2000000435,
+    "item_promo_discount": 5503.639999999999,
+    "shipping_promo_discount_excluded": 5307.180000000009,
+    "all_orders_gross_item_sales": 415233.1300000046
+  }
+}
