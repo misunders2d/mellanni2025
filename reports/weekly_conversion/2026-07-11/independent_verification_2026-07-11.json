@@ -1,0 +1,111 @@
+{
+  "status": "pass",
+  "checks": [
+    {
+      "name": "workbook_zipfile",
+      "status": "pass",
+      "details": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-07-11/Mellanni_Weekly_CEO_Overview_2026-07-11.xlsx"
+    },
+    {
+      "name": "html_has_prepared_band",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "html_has_top_promo_section",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "html_has_top_asin_table",
+      "status": "pass",
+      "details": "CEO body must include visible Top ASIN table, not only a workbook pointer"
+    },
+    {
+      "name": "html_uses_ld_not_unk",
+      "status": "pass",
+      "details": "UNK absent from CEO HTML"
+    },
+    {
+      "name": "html_pp_columns_formatted",
+      "status": "pass",
+      "details": "percentage-point columns should not show raw decimal fractions"
+    },
+    {
+      "name": "html_narrative_signs_match_metrics",
+      "status": "pass",
+      "details": "bullet wording must match metric direction"
+    },
+    {
+      "name": "gross_sales_kpi_matches_all_orders",
+      "status": "pass",
+      "details": "Gross Sales KPI must come from all-orders gross_item_sales"
+    },
+    {
+      "name": "br_gross_control_matches_control",
+      "status": "pass",
+      "details": "Business Report gross is control-only"
+    },
+    {
+      "name": "gross_sales_gte_net_item_sales",
+      "status": "pass",
+      "details": "gross=409,552.91; net=403,513.51"
+    },
+    {
+      "name": "net_item_sales_formula",
+      "status": "pass",
+      "details": "net = all-orders gross - item promo discount"
+    },
+    {
+      "name": "sessions_match_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "units_match_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "conversion_matches_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "net_item_sales_matches_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "item_promo_discount_matches_control",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "product_sales_sum_matches_br",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "asin_sales_sum_matches_br",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "top_asin_size_color_non_numeric",
+      "status": "pass",
+      "details": ""
+    },
+    {
+      "name": "keyword_rows_present",
+      "status": "pass",
+      "details": "rows=88"
+    },
+    {
+      "name": "promo_rows_present",
+      "status": "pass",
+      "details": "rows=7"
+    }
+  ],
+  "control_file": "/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-07-11/independent_control_totals.csv"
+}
