@@ -1,0 +1,2 @@
+min_date,max_date,row_count,asins,current_rows,current_asins,prior_rows,prior_asins,negative_metric_rows,zero_sessions_positive_units
+2026-07-05,2026-07-18,15101,1364,7472,1322,7629,1345,0,46
