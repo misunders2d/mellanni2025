@@ -42,6 +42,9 @@ REQUIRED_FILES = {
     "promos": "top_promo_discounts.csv",
 }
 
+H10_FILE = Path("h10/h10_keyword_candidates.csv")
+H10_REQUIRED_COLUMNS = {"source", "asin", "keyword", "search_volume", "organic_rank", "sponsored_rank", "cpr", "iq_score", "title_density", "competing_products", "keyword_sales", "cpc", "trend"}
+
 REQUIRED_COLUMNS = {
     "validation": {"min_date", "max_date", "row_count", "current_rows", "prior_rows", "negative_metric_rows"},
     "trend": {"week_start", "week_end", "gross_sales", "sessions", "units", "unit_conversion"},
@@ -57,8 +60,8 @@ MONEY_COLS = {
     "net_item_sales", "shipping_promo_discount_excluded", "est_total_keyword_sales", "est_brand_keyword_sales",
     "prior_est_total_keyword_sales",
 }
-PERCENT_COLS = {"unit_conversion", "prior_conversion", "conversion", "conversion_change_pp", "conversion_pp", "sales_wow", "total_sales_wow"}
-INT_COLS = {"sessions", "prior_sessions", "units", "prior_units", "orders", "current_position", "prior_position", "rank_movement", "search_query_volume", "total_purchases", "brand_purchases"}
+PERCENT_COLS = {"unit_conversion", "prior_conversion", "conversion", "conversion_change_pp", "conversion_pp", "sales_wow", "total_sales_wow", "brand_ctr", "brand_purchase_per_click"}
+INT_COLS = {"sessions", "prior_sessions", "units", "prior_units", "orders", "current_position", "prior_position", "rank_movement", "search_query_volume", "total_purchases", "brand_purchases", "search_volume", "organic_rank", "sponsored_rank", "title_density", "competing_products", "keyword_sales"}
 
 
 @dataclass
@@ -107,12 +110,24 @@ def read_inputs(report_dir: Path) -> tuple[dict[str, pd.DataFrame], list[Check]]
         checks.append(Check(f"file:{filename}", "pass", f"rows={len(df)}"))
         missing = sorted(REQUIRED_COLUMNS[key] - set(df.columns))
         checks.append(Check(f"columns:{filename}", "fail" if missing else "pass", ", ".join(missing) if missing else "ok"))
+
+    h10_path = report_dir / H10_FILE
+    if not h10_path.exists():
+        checks.append(Check("file:h10_keyword_candidates.csv", "fail", f"missing mandatory H10 artifact: {h10_path}"))
+        data["h10_keywords"] = pd.DataFrame()
+    else:
+        h10 = pd.read_csv(h10_path)
+        data["h10_keywords"] = h10
+        checks.append(Check("file:h10_keyword_candidates.csv", "pass", f"rows={len(h10)}"))
+        missing = sorted(H10_REQUIRED_COLUMNS - set(h10.columns))
+        checks.append(Check("columns:h10_keyword_candidates.csv", "fail" if missing else "pass", ", ".join(missing) if missing else "ok"))
     return data, checks
 
 
 def coerce_numeric(df: pd.DataFrame) -> pd.DataFrame:
+    numeric_like = {"cpr", "iq_score", "cpc", "trend", "brand_ctr", "brand_purchase_per_click"}
     for col in df.columns:
-        if col in MONEY_COLS or col in PERCENT_COLS or col in INT_COLS:
+        if col in MONEY_COLS or col in PERCENT_COLS or col in INT_COLS or col in numeric_like:
             df[col] = pd.to_numeric(df[col], errors="coerce")
     return df
 
@@ -173,6 +188,45 @@ def normalize_ld(label: Any) -> str:
     return s
 
 
+def build_h10_keyword_table(h10: pd.DataFrame, sqp: pd.DataFrame, checks: list[Check]) -> pd.DataFrame:
+    if h10.empty:
+        checks.append(Check("h10_mandatory_rows", "fail", "No H10 rows; no H10 == no report"))
+        return pd.DataFrame()
+    h10 = coerce_numeric(h10.copy())
+    h10 = h10[h10["keyword"].notna() & h10["keyword"].astype(str).str.strip().ne("")]
+    if h10.empty:
+        checks.append(Check("h10_mandatory_rows", "fail", "H10 file has no usable keyword rows"))
+        return pd.DataFrame()
+    checks.append(Check("h10_mandatory_rows", "pass", f"rows={len(h10)}"))
+    grouped = h10.groupby("keyword", as_index=False).agg({
+        "asin": lambda x: ", ".join(sorted({str(v) for v in x if pd.notna(v)})[:8]),
+        "search_volume": "max",
+        "organic_rank": "min",
+        "sponsored_rank": "min",
+        "cpr": "min",
+        "iq_score": "max",
+        "title_density": "min",
+        "competing_products": "min",
+        "keyword_sales": "max",
+        "cpc": "mean",
+        "trend": "max",
+        "notes": "first",
+    }).rename(columns={"asin": "h10_asins"})
+    sqp_cols = [c for c in ["keyword", "search_query_volume", "total_purchases", "brand_purchases", "est_total_keyword_sales", "est_brand_keyword_sales", "brand_ctr", "brand_purchase_per_click"] if c in sqp.columns]
+    if sqp_cols:
+        grouped = grouped.merge(sqp[sqp_cols].copy(), on="keyword", how="left")
+    grouped["opportunity_score"] = (
+        grouped["keyword_sales"].fillna(0).rank(pct=True) * 40
+        + grouped["search_volume"].fillna(0).rank(pct=True) * 25
+        + grouped["iq_score"].fillna(0).rank(pct=True) * 20
+        + (1 - grouped["title_density"].fillna(grouped["title_density"].max() or 0).rank(pct=True)) * 15
+    ).round(1)
+    grouped = grouped.sort_values(["keyword_sales", "search_volume", "opportunity_score"], ascending=False)
+    overlap = grouped["est_total_keyword_sales"].notna().sum() if "est_total_keyword_sales" in grouped else 0
+    checks.append(Check("h10_sqp_overlap", "pass" if overlap > 0 else "warning", f"overlap_rows={int(overlap)}"))
+    return grouped
+
+
 def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tuple[dict[str, Any], list[Check]]:
     checks: list[Check] = []
     for key in data:
@@ -183,7 +237,8 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
     promos = data["promos"].copy()
     products = data["products"].copy()
     asins = data["asins"].copy()
-    keywords = data["keywords"].copy()
+    sqp_keywords = data["keywords"].copy()
+    h10_keywords_raw = data.get("h10_keywords", pd.DataFrame()).copy()
     validation = data["validation"].copy()
 
     raw_promo_labels = promos["promo_label"].copy() if "promo_label" in promos else pd.Series(dtype=object)
@@ -237,7 +292,8 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
     products = products.sort_values("sales", ascending=False)
     asins = asins.sort_values("sales", ascending=False)
     promos = promos.sort_values("item_promo_discount", ascending=False)
-    keywords = keywords.sort_values("est_total_keyword_sales", ascending=False)
+    sqp_keywords = sqp_keywords.sort_values("est_total_keyword_sales", ascending=False)
+    keywords = build_h10_keyword_table(h10_keywords_raw, sqp_keywords, checks)
 
     current_ao_gross = float(cur_net_d.get("gross_item_sales", 0) or 0)
     prior_ao_gross = float(prior_net_d.get("gross_item_sales", 0) or 0)
@@ -298,6 +354,8 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
         "products": products,
         "asins": asins,
         "keywords": keywords,
+        "sqp_keywords": sqp_keywords,
+        "h10_keywords_raw": h10_keywords_raw,
         "net_sales": net,
         "promos": promos,
     }
@@ -395,6 +453,27 @@ def render_html(context: dict[str, Any]) -> str:
     if biggest_decline is not None:
         bullets.append(f"Largest collection sales pressure: {escape(str(biggest_decline['collection']))} ({fmt_money(biggest_decline['sales_delta'])} WoW).")
 
+    if keywords.empty:
+        raise SystemExit("H10 keyword table is empty; no H10 == no report")
+    h10_top = keywords.head(3).to_dict("records")
+    h10_action_terms = ", ".join(
+        f"{escape(str(r.get('keyword')))} (org. #{fmt_int(r.get('organic_rank'))}, {fmt_int(r.get('search_volume'))} H10 searches)"
+        for r in h10_top
+    )
+    sqp_soft = keywords[keywords.get("brand_purchase_per_click", pd.Series(dtype=float)).notna()].sort_values("brand_purchase_per_click").head(1)
+    sqp_note = "Use SQP overlap columns as purchase-behavior overlay; do not treat SQP as keyword source."
+    if len(sqp_soft):
+        r = sqp_soft.iloc[0]
+        sqp_note = f"Weakest H10/SQP overlap purchase behavior in top set: {escape(str(r['keyword']))} at {fmt_pct(r.get('brand_purchase_per_click'), 1)} brand purchases/click."
+    actions_html = f'''
+  <h2 style="font-size:22px;margin:18px 0 10px;color:#111827">Actions / Takeaways</h2>
+  <table style="width:100%;border-collapse:collapse;margin:0 0 18px;font-size:14px">
+    <tr><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3;width:24%">Decision</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">Evidence</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">Action</th></tr>
+    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Defend high-demand H10 terms</td><td style="padding:9px;border:1px solid #fecdd3">{h10_action_terms}</td><td style="padding:9px;border:1px solid #fecdd3">Audit listing/PPC coverage for these terms first; H10 is source, SQP only behavior overlay.</td></tr>
+    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Fix efficiency, not traffic</td><td style="padding:9px;border:1px solid #fecdd3">Sessions {sessions_phrase} {fmt_int(m['sessions'])}; conversion {conversion_phrase} {fmt_pct(m['conversion'], 2)} ({conv_delta}).</td><td style="padding:9px;border:1px solid #fecdd3">Check top ASIN price/promo/content changes before buying more traffic.</td></tr>
+    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Use SQP only for behavior</td><td style="padding:9px;border:1px solid #fecdd3">{sqp_note}</td><td style="padding:9px;border:1px solid #fecdd3">Diagnose CTR/purchase friction on H10-overlap terms; do not create SQP-only keyword actions.</td></tr>
+  </table>'''
+
     # HTML-native charts.
     trend = context["trend"].copy()
     max_sales = trend["gross_sales"].abs().max() if len(trend) else 0
@@ -411,11 +490,10 @@ def render_html(context: dict[str, Any]) -> str:
         f"<tr><td style='padding:6px'>{escape(str(r.collection))}</td><td style='padding:6px'>{html_bar(r.sales_delta, max_delta, '#b91c1c' if r.sales_delta < 0 else '#0f8a4b')}</td><td style='padding:6px;text-align:right;color:{'#b91c1c' if r.sales_delta < 0 else '#0f8a4b'}'>{fmt_money(r.sales_delta)}</td></tr>"
         for r in product_delta.itertuples(index=False)
     )
-    kw_move = context["keywords"].copy()
-    kw_move = kw_move[kw_move["rank_movement"].fillna(0) != 0].head(10)
-    max_move = kw_move["rank_movement"].abs().max() if len(kw_move) else 0
+    kw_move = context["keywords"].copy().head(10)
+    max_kw_sales = kw_move["keyword_sales"].max() if len(kw_move) and "keyword_sales" in kw_move else 0
     keyword_rows = "".join(
-        f"<tr><td style='padding:6px'>{escape(str(r.keyword))}</td><td style='padding:6px'>{html_bar(r.rank_movement, max_move, '#0f8a4b' if r.rank_movement > 0 else '#b91c1c')}</td><td style='padding:6px;text-align:right;color:{'#0f8a4b' if r.rank_movement > 0 else '#b91c1c'}'>{'↓' if r.rank_movement > 0 else '↑'} {abs(int(r.rank_movement))}</td></tr>"
+        f"<tr><td style='padding:6px'>{escape(str(r.keyword))}</td><td style='padding:6px'>{html_bar(getattr(r, 'keyword_sales', 0), max_kw_sales, '#2563eb')}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'keyword_sales', 0))}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'organic_rank', 0))}</td></tr>"
         for r in kw_move.itertuples(index=False)
     )
 
@@ -429,8 +507,8 @@ def render_html(context: dict[str, Any]) -> str:
         ("promo_label", "Promo"), ("item_promo_discount", "Discount"), ("gross_item_sales", "Gross"), ("net_item_sales", "Net"), ("orders", "Orders"), ("units", "Units")
     ], money={"item_promo_discount", "gross_item_sales", "net_item_sales"}, integer={"orders", "units"})
     keyword_table = render_table(keywords.to_dict("records"), [
-        ("keyword", "Keyword"), ("est_total_keyword_sales", "SQP Sales"), ("total_purchases", "Purchases"), ("est_brand_keyword_sales", "Brand Sales"), ("brand_purchases", "Brand Purch."), ("current_position", "Rank"), ("prior_position", "Prior"), ("rank_movement", "Move")
-    ], money={"est_total_keyword_sales", "est_brand_keyword_sales"}, integer={"total_purchases", "brand_purchases", "current_position", "prior_position", "rank_movement"})
+        ("keyword", "Keyword"), ("search_volume", "H10 Search Vol."), ("keyword_sales", "H10 Kw Sales"), ("organic_rank", "Org. Rank"), ("sponsored_rank", "Spon. Rank"), ("cpr", "CPR"), ("iq_score", "IQ"), ("trend", "Trend"), ("est_brand_keyword_sales", "SQP Brand Sales"), ("brand_purchase_per_click", "Brand Purch./Click")
+    ], money={"est_brand_keyword_sales"}, pct={"brand_purchase_per_click"}, integer={"search_volume", "keyword_sales", "organic_rank", "sponsored_rank", "trend"})
 
     return f"""
 <div style="font-family:Arial,Helvetica,sans-serif;color:#242424;max-width:980px;margin:0 auto;background:#fff">
@@ -439,6 +517,7 @@ def render_html(context: dict[str, Any]) -> str:
     <div style="font-size:13px;color:#dbe4f0">Week ending Sat {d['week_end']} · Compared to {d['prior_start']} – {d['prior_end']}</div>
   </div>
   <div style="border-left:4px solid #f97316;background:#fff7ed;padding:11px 14px;margin:0 0 20px;font-weight:700">Prepared by Sergey's AI helper.</div>
+{actions_html}
 
   <h2 style="font-size:20px;margin:20px 0 12px">Executive snapshot</h2>
   <table style="width:100%;border-spacing:8px;margin:0 0 12px"><tr>{cards_html}</tr></table>
@@ -447,12 +526,12 @@ def render_html(context: dict[str, Any]) -> str:
   <h2 style="font-size:20px;margin:20px 0 10px">Charts</h2>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare all-orders gross item sales within this two-week view.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Largest collection movers by absolute WoW sales delta; red = decline, green = gain.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div>
-  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>SQP keyword rank movement</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Lower organic rank number is better: green ↓ = improved, red ↑ = worsened.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
+  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>H10 keyword demand / rank</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">H10 is the keyword source; SQP is layered only for purchase-behavior diagnostics.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
 
   <h2 style="font-size:18px;margin:18px 0 8px">Product / collection conversion change</h2>{product_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Top ASINs</h2>{asin_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Top promo discounts</h2><p style="font-size:12px;color:#667085">Net item sales deduct item promo discounts only. Shipment/shipping promotions are not product promotions and are not included in this CEO promotion view. Blank/unknown Amazon promo labels are displayed as LD.</p>{promo_table}
-  <h2 style="font-size:18px;margin:18px 0 8px">Tracked SQP keyword standings</h2>{keyword_table}
+  <h2 style="font-size:18px;margin:18px 0 8px">H10 keyword standings with SQP diagnostics</h2><p style="font-size:12px;color:#667085">Current Helium 10/Cerebro data is the keyword source. SQP columns are behavior overlays for overlapping terms only.</p>{keyword_table}
   <p style="font-size:12px;color:#667085;margin-top:16px">Full workbook attached.</p>
 </div>
 """.strip()
@@ -478,7 +557,8 @@ def write_workbook(context: dict[str, Any], out: Path) -> None:
         context["products"].to_excel(writer, index=False, sheet_name="Products")
         context["asins"].to_excel(writer, index=False, sheet_name="Top ASINs")
         context["promos"].to_excel(writer, index=False, sheet_name="Promos")
-        context["keywords"].to_excel(writer, index=False, sheet_name="Keywords")
+        context["keywords"].to_excel(writer, index=False, sheet_name="H10 Keywords")
+        context["sqp_keywords"].to_excel(writer, index=False, sheet_name="SQP Diagnostics")
 
     wb = load_workbook(out)
     header_fill = PatternFill("solid", fgColor="1F2937")
@@ -548,6 +628,8 @@ def main() -> int:
     verification_path.write_text(json.dumps(verification, indent=2, default=str), encoding="utf-8")
 
     print(json.dumps({"status": verification["status"], "xlsx": str(xlsx_path), "html": str(html_path), "verification": str(verification_path)}, indent=2))
+    if verification["status"] == "fail":
+        return 1
     if args.strict and verification["status"] != "pass":
         return 1
     return 0

@@ -36,17 +36,16 @@ def main() -> int:
         "Product / collection conversion change",
         "Top ASINs",
         "Top promo discounts",
+        "H10 keyword standings with SQP diagnostics",
     ]
     missing = [s for s in required if s not in html]
-    keyword_section_ok = (
-        "H10 keyword intelligence" in html
-        or "H10 keyword standings" in html
-        or "Tracked SQP keyword standings" in html
-    )
-    if not keyword_section_ok:
-        missing.append("H10 keyword intelligence / SQP diagnostics")
     if missing:
         raise SystemExit("HTML missing required visible sections: " + ", ".join(missing))
+    if "Tracked SQP keyword standings" in html or "H10 keyword intelligence — degraded" in html:
+        raise SystemExit("HTML still contains invalid no-H10/SQP-fallback keyword section")
+    h10_path = report_dir / "h10" / "h10_keyword_candidates.csv"
+    if not h10_path.exists() or len(pd.read_csv(h10_path)) == 0:
+        raise SystemExit(f"Missing mandatory H10 artifact: {h10_path}")
     if "See attached workbook for full Top ASINs table" in html:
         raise SystemExit("HTML still has shortened Top ASIN placeholder")
     if not xlsx_path.exists():

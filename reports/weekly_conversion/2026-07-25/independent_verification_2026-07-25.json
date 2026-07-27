@@ -97,9 +97,19 @@
       "details": ""
     },
     {
-      "name": "keyword_rows_present",
+      "name": "legacy_keyword_rows_present",
       "status": "pass",
       "details": "rows=100"
+    },
+    {
+      "name": "h10_keyword_rows_present",
+      "status": "pass",
+      "details": "rows=150"
+    },
+    {
+      "name": "html_has_h10_keyword_section",
+      "status": "pass",
+      "details": "H10 is mandatory; SQP/manual fallback section is invalid"
     },
     {
       "name": "promo_rows_present",

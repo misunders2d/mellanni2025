@@ -55,11 +55,15 @@ def main() -> int:
     products = pd.read_csv(base / "product_performance.csv")
     asins = pd.read_csv(base / "asin_performance_size_color.csv")
     keywords = pd.read_csv(base / "tracked_sqp_keywords.csv")
+    h10_path = base / "h10" / "h10_keyword_candidates.csv"
+    h10_keywords = pd.read_csv(h10_path) if h10_path.exists() else pd.DataFrame()
     promos = pd.read_csv(base / "top_promo_discounts.csv")
     check(checks, "product_sales_sum_matches_br", abs(products["sales"].sum() - float(ctrl["br_current_gross_sales"])) < 0.05)
     check(checks, "asin_sales_sum_matches_br", abs(asins["sales"].sum() - float(ctrl["br_current_gross_sales"])) < 0.05)
     check(checks, "top_asin_size_color_non_numeric", not asins.head(25)["size"].astype(str).str.fullmatch(r"\d+(\.\d+)?").any())
-    check(checks, "keyword_rows_present", len(keywords) >= 15, f"rows={len(keywords)}")
+    check(checks, "legacy_keyword_rows_present", len(keywords) >= 15, f"rows={len(keywords)}")
+    check(checks, "h10_keyword_rows_present", len(h10_keywords) >= 15, f"rows={len(h10_keywords)}")
+    check(checks, "html_has_h10_keyword_section", "H10 keyword standings with SQP diagnostics" in html and "Tracked SQP keyword standings" not in html and "H10 keyword intelligence — degraded" not in html, "H10 is mandatory; SQP/manual fallback section is invalid")
     check(checks, "promo_rows_present", len(promos) > 0, f"rows={len(promos)}")
 
     status = "pass" if all(c["status"] == "pass" for c in checks) else "fail"

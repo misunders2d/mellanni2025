@@ -82,6 +82,16 @@
       "details": "ok"
     },
     {
+      "name": "file:h10_keyword_candidates.csv",
+      "status": "pass",
+      "details": "rows=150"
+    },
+    {
+      "name": "columns:h10_keyword_candidates.csv",
+      "status": "pass",
+      "details": "ok"
+    },
+    {
       "name": "promo_ld_normalization",
       "status": "pass",
       "details": "raw_unknown_labels=1 remaining_unknown=0"
@@ -115,6 +125,16 @@
       "name": "asin_size_labels",
       "status": "pass",
       "details": "numeric_size_rows_top25=0"
+    },
+    {
+      "name": "h10_mandatory_rows",
+      "status": "pass",
+      "details": "rows=150"
+    },
+    {
+      "name": "h10_sqp_overlap",
+      "status": "pass",
+      "details": "overlap_rows=23"
     },
     {
       "name": "gross_sales_kpi_from_all_orders",

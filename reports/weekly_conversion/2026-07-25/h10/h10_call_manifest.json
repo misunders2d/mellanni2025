@@ -1,0 +1,99 @@
+{
+  "generated_for_week_ending": "2026-07-25",
+  "marketplace": "US",
+  "calls": [
+    {
+      "tool": "list_tracked_keywords",
+      "request": {
+        "marketplace": "US",
+        "limitation": 500,
+        "sort_field": "search_volume",
+        "sort_direction": "desc"
+      },
+      "row_count": 500,
+      "status": "success",
+      "raw_file": "h10_list_tracked_keywords.json"
+    },
+    {
+      "tool": "get_keywords_by_asin",
+      "request": {
+        "asin": "B00NLLUMOE",
+        "marketplace": "US",
+        "time_period": "current/default"
+      },
+      "row_count": 16056,
+      "status": "success",
+      "raw_file": null,
+      "raw_omitted_reason": "full sanitized response exceeds practical report artifact size (~16k rows per call); normalized candidates retained"
+    },
+    {
+      "tool": "get_keywords_by_asin",
+      "request": {
+        "asin": "B00NQDGAP2",
+        "marketplace": "US",
+        "time_period": "current/default"
+      },
+      "row_count": 16056,
+      "status": "success",
+      "raw_file": null,
+      "raw_omitted_reason": "full sanitized response exceeds practical report artifact size (~16k rows per call); normalized candidates retained"
+    },
+    {
+      "tool": "get_keywords_by_asin",
+      "request": {
+        "asin": "B00O35DAL4",
+        "marketplace": "US",
+        "time_period": "current/default"
+      },
+      "row_count": 16025,
+      "status": "success",
+      "raw_file": null,
+      "raw_omitted_reason": "full sanitized response exceeds practical report artifact size (~16k rows per call); normalized candidates retained"
+    },
+    {
+      "tool": "get_keywords_by_asin",
+      "request": {
+        "asin": "B016P42ARU",
+        "marketplace": "US",
+        "time_period": "current/default"
+      },
+      "row_count": 16056,
+      "status": "success",
+      "raw_file": null,
+      "raw_omitted_reason": "full sanitized response exceeds practical report artifact size (~16k rows per call); normalized candidates retained"
+    },
+    {
+      "tool": "get_keywords_by_asin",
+      "request": {
+        "asin": "B0822X1VP7",
+        "marketplace": "US",
+        "time_period": "current/default"
+      },
+      "row_count": 16056,
+      "status": "success",
+      "raw_file": null,
+      "raw_omitted_reason": "full sanitized response exceeds practical report artifact size (~16k rows per call); normalized candidates retained"
+    },
+    {
+      "tool": "analyze_keywords",
+      "request": {
+        "marketplace": "US",
+        "keywords": [
+          "queen sheets",
+          "king sheets",
+          "bed sheets queen size",
+          "king size sheets set",
+          "twin xl sheets",
+          "full size sheets",
+          "deep pocket sheets",
+          "microfiber sheets",
+          "sheets queen size bed set"
+        ]
+      },
+      "row_count": 9,
+      "status": "success",
+      "raw_file": "h10_analyze_keywords.json"
+    }
+  ]
+}
+
