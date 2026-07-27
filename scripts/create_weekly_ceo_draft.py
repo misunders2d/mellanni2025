@@ -36,9 +36,15 @@ def main() -> int:
         "Product / collection conversion change",
         "Top ASINs",
         "Top promo discounts",
-        "Tracked SQP keyword standings",
     ]
     missing = [s for s in required if s not in html]
+    keyword_section_ok = (
+        "H10 keyword intelligence" in html
+        or "H10 keyword standings" in html
+        or "Tracked SQP keyword standings" in html
+    )
+    if not keyword_section_ok:
+        missing.append("H10 keyword intelligence / SQP diagnostics")
     if missing:
         raise SystemExit("HTML missing required visible sections: " + ", ".join(missing))
     if "See attached workbook for full Top ASINs table" in html:
