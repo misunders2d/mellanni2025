@@ -455,23 +455,19 @@ def render_html(context: dict[str, Any]) -> str:
 
     if keywords.empty:
         raise SystemExit("H10 keyword table is empty; no H10 == no report")
-    h10_top = keywords.head(3).to_dict("records")
-    h10_action_terms = ", ".join(
-        f"{escape(str(r.get('keyword')))} (org. #{fmt_int(r.get('organic_rank'))}, {fmt_int(r.get('search_volume'))} H10 searches)"
-        for r in h10_top
-    )
-    sqp_soft = keywords[keywords.get("brand_purchase_per_click", pd.Series(dtype=float)).notna()].sort_values("brand_purchase_per_click").head(1)
-    sqp_note = "Use SQP overlap columns as purchase-behavior overlay; do not treat SQP as keyword source."
-    if len(sqp_soft):
-        r = sqp_soft.iloc[0]
-        sqp_note = f"Weakest H10/SQP overlap purchase behavior in top set: {escape(str(r['keyword']))} at {fmt_pct(r.get('brand_purchase_per_click'), 1)} brand purchases/click."
+    h10_terms = ", ".join(escape(str(k)) for k in keywords.head(3)["keyword"].tolist())
+    top_asin_details = []
+    for r in asins.head(2).to_dict("records"):
+        label = " ".join(str(r.get(x, "")).strip() for x in ["size", "color", "collection"] if str(r.get(x, "")).strip())
+        top_asin_details.append(f"{escape(label)}: {fmt_money(r.get('sales'))}, {fmt_pct(r.get('conversion'), 2)} conv. ({fmt_pct(r.get('conversion_change_pp'), 2, pp=True)})")
+    top_asin_evidence = "; ".join(top_asin_details)
     actions_html = f'''
   <h2 style="font-size:22px;margin:18px 0 10px;color:#111827">Actions / Takeaways</h2>
-  <table style="width:100%;border-collapse:collapse;margin:0 0 18px;font-size:14px">
-    <tr><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3;width:24%">Decision</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">Evidence</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">Action</th></tr>
-    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Defend high-demand H10 terms</td><td style="padding:9px;border:1px solid #fecdd3">{h10_action_terms}</td><td style="padding:9px;border:1px solid #fecdd3">Audit listing/PPC coverage for these terms first; H10 is source, SQP only behavior overlay.</td></tr>
-    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Fix efficiency, not traffic</td><td style="padding:9px;border:1px solid #fecdd3">Sessions {sessions_phrase} {fmt_int(m['sessions'])}; conversion {conversion_phrase} {fmt_pct(m['conversion'], 2)} ({conv_delta}).</td><td style="padding:9px;border:1px solid #fecdd3">Check top ASIN price/promo/content changes before buying more traffic.</td></tr>
-    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Use SQP only for behavior</td><td style="padding:9px;border:1px solid #fecdd3">{sqp_note}</td><td style="padding:9px;border:1px solid #fecdd3">Diagnose CTR/purchase friction on H10-overlap terms; do not create SQP-only keyword actions.</td></tr>
+  <table style="width:100%;border-collapse:collapse;margin:0 0 18px;font-size:14px;line-height:1.45">
+    <tr><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3;width:25%">Takeaway</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">Why it matters</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">This week’s action</th></tr>
+    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Sales grew, but efficiency got worse.</td><td style="padding:9px;border:1px solid #fecdd3">Gross sales reached {fmt_money(m['gross_sales'])} ({sales_delta}) because sessions {sessions_phrase} {fmt_int(m['sessions'])}. Conversion {conversion_phrase} {fmt_pct(m['conversion'], 2)} ({conv_delta}), so traffic quality/offer conversion is the issue.</td><td style="padding:9px;border:1px solid #fecdd3">Do not simply buy more traffic. Audit offer/PDP friction first: price, coupon, inventory, reviews, hero image, and mobile content.</td></tr>
+    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Start with the biggest money ASINs.</td><td style="padding:9px;border:1px solid #fecdd3">{top_asin_evidence}</td><td style="padding:9px;border:1px solid #fecdd3">Assign owner to review these top ASINs and list exact fixes before next week’s report.</td></tr>
+    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Use H10 for keywords; use SQP for shopper behavior.</td><td style="padding:9px;border:1px solid #fecdd3">H10 confirms priority demand pools: {h10_terms}. SQP should explain click/purchase behavior on those terms, not create a separate keyword list.</td><td style="padding:9px;border:1px solid #fecdd3">Check listing and PPC coverage for these H10 terms, then use SQP to see whether shoppers click and buy after seeing Mellanni.</td></tr>
   </table>'''
 
     # HTML-native charts.
