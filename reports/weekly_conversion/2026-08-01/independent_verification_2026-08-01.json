@@ -112,6 +112,11 @@
       "details": "H10 is mandatory; SQP/manual fallback section is invalid"
     },
     {
+      "name": "html_h10_movement_labeled",
+      "status": "pass",
+      "details": "If prior H10 exists, CEO chart must label keyword-sales estimate, organic rank, and up/down rank change"
+    },
+    {
       "name": "promo_rows_present",
       "status": "pass",
       "details": "rows=13"

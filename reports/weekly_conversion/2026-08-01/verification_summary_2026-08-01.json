@@ -92,6 +92,11 @@
       "details": "ok"
     },
     {
+      "name": "file:h10_prior_keyword_candidates.csv",
+      "status": "pass",
+      "details": "rows=150"
+    },
+    {
       "name": "promo_ld_normalization",
       "status": "pass",
       "details": "raw_unknown_labels=1 remaining_unknown=0"
@@ -130,6 +135,11 @@
       "name": "h10_mandatory_rows",
       "status": "pass",
       "details": "rows=150"
+    },
+    {
+      "name": "h10_rank_movement",
+      "status": "pass",
+      "details": "overlap_rows=20"
     },
     {
       "name": "h10_sqp_overlap",

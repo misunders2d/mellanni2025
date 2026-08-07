@@ -64,6 +64,15 @@ def main() -> int:
     check(checks, "legacy_keyword_rows_present", len(keywords) >= 15, f"rows={len(keywords)}")
     check(checks, "h10_keyword_rows_present", len(h10_keywords) >= 15, f"rows={len(h10_keywords)}")
     check(checks, "html_has_h10_keyword_section", "H10 keyword standings with SQP diagnostics" in html and "Tracked SQP keyword standings" not in html and "H10 keyword intelligence — degraded" not in html, "H10 is mandatory; SQP/manual fallback section is invalid")
+    prior_h10_path = base / "h10" / "h10_prior_keyword_candidates.csv"
+    h10_movement_required = prior_h10_path.exists()
+    h10_movement_labels_present = all(label in html for label in [
+        "H10 keyword demand / rank movement",
+        "Rank change vs prior H10",
+        "Up means rank improved",
+        "Down means rank fell",
+    ])
+    check(checks, "html_h10_movement_labeled", (not h10_movement_required) or h10_movement_labels_present, "If prior H10 exists, CEO chart must label keyword-sales estimate, organic rank, and up/down rank change")
     check(checks, "promo_rows_present", len(promos) > 0, f"rows={len(promos)}")
 
     status = "pass" if all(c["status"] == "pass" for c in checks) else "fail"

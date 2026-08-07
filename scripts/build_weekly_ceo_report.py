@@ -43,6 +43,7 @@ REQUIRED_FILES = {
 }
 
 H10_FILE = Path("h10/h10_keyword_candidates.csv")
+PRIOR_H10_FILE = Path("h10/h10_prior_keyword_candidates.csv")
 H10_REQUIRED_COLUMNS = {"source", "asin", "keyword", "search_volume", "organic_rank", "sponsored_rank", "cpr", "iq_score", "title_density", "competing_products", "keyword_sales", "cpc", "trend"}
 
 REQUIRED_COLUMNS = {
@@ -61,7 +62,7 @@ MONEY_COLS = {
     "prior_est_total_keyword_sales",
 }
 PERCENT_COLS = {"unit_conversion", "prior_conversion", "conversion", "conversion_change_pp", "conversion_pp", "sales_wow", "total_sales_wow", "brand_ctr", "brand_purchase_per_click"}
-INT_COLS = {"sessions", "prior_sessions", "units", "prior_units", "orders", "current_position", "prior_position", "rank_movement", "search_query_volume", "total_purchases", "brand_purchases", "search_volume", "organic_rank", "sponsored_rank", "title_density", "competing_products", "keyword_sales"}
+INT_COLS = {"sessions", "prior_sessions", "units", "prior_units", "orders", "current_position", "prior_position", "rank_movement", "search_query_volume", "total_purchases", "brand_purchases", "search_volume", "organic_rank", "prior_organic_rank", "sponsored_rank", "title_density", "competing_products", "keyword_sales"}
 
 
 @dataclass
@@ -121,6 +122,15 @@ def read_inputs(report_dir: Path) -> tuple[dict[str, pd.DataFrame], list[Check]]
         checks.append(Check("file:h10_keyword_candidates.csv", "pass", f"rows={len(h10)}"))
         missing = sorted(H10_REQUIRED_COLUMNS - set(h10.columns))
         checks.append(Check("columns:h10_keyword_candidates.csv", "fail" if missing else "pass", ", ".join(missing) if missing else "ok"))
+
+    prior_h10_path = report_dir / PRIOR_H10_FILE
+    if prior_h10_path.exists():
+        prior_h10 = pd.read_csv(prior_h10_path)
+        data["prior_h10_keywords"] = prior_h10
+        checks.append(Check("file:h10_prior_keyword_candidates.csv", "pass", f"rows={len(prior_h10)}"))
+    else:
+        data["prior_h10_keywords"] = pd.DataFrame()
+        checks.append(Check("file:h10_prior_keyword_candidates.csv", "warning", "missing; H10 movement hidden because no prior H10 snapshot was provided"))
     return data, checks
 
 
@@ -188,7 +198,21 @@ def normalize_ld(label: Any) -> str:
     return s
 
 
-def build_h10_keyword_table(h10: pd.DataFrame, sqp: pd.DataFrame, checks: list[Check]) -> pd.DataFrame:
+def format_rank_change(value: Any) -> str:
+    try:
+        if pd.isna(value):
+            return "—"
+        n = int(round(float(value)))
+        if n > 0:
+            return f"Up {n}"
+        if n < 0:
+            return f"Down {abs(n)}"
+        return "Flat"
+    except Exception:
+        return "—"
+
+
+def build_h10_keyword_table(h10: pd.DataFrame, sqp: pd.DataFrame, checks: list[Check], prior_h10: pd.DataFrame | None = None) -> pd.DataFrame:
     if h10.empty:
         checks.append(Check("h10_mandatory_rows", "fail", "No H10 rows; no H10 == no report"))
         return pd.DataFrame()
@@ -212,6 +236,25 @@ def build_h10_keyword_table(h10: pd.DataFrame, sqp: pd.DataFrame, checks: list[C
         "trend": "max",
         "notes": "first",
     }).rename(columns={"asin": "h10_asins"})
+    if prior_h10 is not None and not prior_h10.empty:
+        prior_h10 = coerce_numeric(prior_h10.copy())
+        prior_h10 = prior_h10[prior_h10["keyword"].notna() & prior_h10["keyword"].astype(str).str.strip().ne("")]
+        prior_h10["keyword"] = prior_h10["keyword"].astype(str).str.strip().str.lower()
+        prior_grouped = prior_h10.groupby("keyword", as_index=False).agg({
+            "organic_rank": "min",
+            "keyword_sales": "max",
+        }).rename(columns={"organic_rank": "prior_organic_rank", "keyword_sales": "prior_keyword_sales"})
+        grouped = grouped.merge(prior_grouped, on="keyword", how="left")
+        grouped["rank_change"] = grouped["prior_organic_rank"] - grouped["organic_rank"]
+        grouped.loc[grouped["prior_organic_rank"].isna() | grouped["organic_rank"].isna(), "rank_change"] = pd.NA
+        grouped["rank_change_label"] = grouped["rank_change"].map(format_rank_change)
+        checks.append(Check("h10_rank_movement", "pass", f"overlap_rows={int(grouped['rank_change'].notna().sum())}"))
+    else:
+        grouped["prior_organic_rank"] = pd.NA
+        grouped["prior_keyword_sales"] = pd.NA
+        grouped["rank_change"] = pd.NA
+        grouped["rank_change_label"] = "—"
+        checks.append(Check("h10_rank_movement", "warning", "no prior H10 snapshot; movement unavailable"))
     sqp_cols = [c for c in ["keyword", "search_query_volume", "total_purchases", "brand_purchases", "est_total_keyword_sales", "est_brand_keyword_sales", "brand_ctr", "brand_purchase_per_click"] if c in sqp.columns]
     if sqp_cols:
         grouped = grouped.merge(sqp[sqp_cols].copy(), on="keyword", how="left")
@@ -239,6 +282,7 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
     asins = data["asins"].copy()
     sqp_keywords = data["keywords"].copy()
     h10_keywords_raw = data.get("h10_keywords", pd.DataFrame()).copy()
+    prior_h10_keywords_raw = data.get("prior_h10_keywords", pd.DataFrame()).copy()
     validation = data["validation"].copy()
 
     raw_promo_labels = promos["promo_label"].copy() if "promo_label" in promos else pd.Series(dtype=object)
@@ -293,7 +337,7 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
     asins = asins.sort_values("sales", ascending=False)
     promos = promos.sort_values("item_promo_discount", ascending=False)
     sqp_keywords = sqp_keywords.sort_values("est_total_keyword_sales", ascending=False)
-    keywords = build_h10_keyword_table(h10_keywords_raw, sqp_keywords, checks)
+    keywords = build_h10_keyword_table(h10_keywords_raw, sqp_keywords, checks, prior_h10_keywords_raw)
 
     current_ao_gross = float(cur_net_d.get("gross_item_sales", 0) or 0)
     prior_ao_gross = float(prior_net_d.get("gross_item_sales", 0) or 0)
@@ -356,6 +400,7 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
         "keywords": keywords,
         "sqp_keywords": sqp_keywords,
         "h10_keywords_raw": h10_keywords_raw,
+        "prior_h10_keywords_raw": prior_h10_keywords_raw,
         "net_sales": net,
         "promos": promos,
     }
@@ -516,10 +561,11 @@ def render_html(context: dict[str, Any]) -> str:
         "<th style='padding:6px;text-align:left;color:#475467;font-size:12px'>Relative H10 keyword-sales estimate</th>"
         "<th style='padding:6px;text-align:right;color:#475467;font-size:12px'>H10 est. weekly keyword sales</th>"
         "<th style='padding:6px;text-align:right;color:#475467;font-size:12px'>Best organic rank</th>"
+        "<th style='padding:6px;text-align:right;color:#475467;font-size:12px'>Rank change vs prior H10</th>"
         "</tr>"
     )
     keyword_rows = keyword_header + "".join(
-        f"<tr><td style='padding:6px'>{escape(str(r.keyword))}</td><td style='padding:6px'>{html_bar(getattr(r, 'keyword_sales', 0), max_kw_sales, '#2563eb')}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'keyword_sales', 0))}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'organic_rank', 0))}</td></tr>"
+        f"<tr><td style='padding:6px'>{escape(str(r.keyword))}</td><td style='padding:6px'>{html_bar(getattr(r, 'keyword_sales', 0), max_kw_sales, '#2563eb')}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'keyword_sales', 0))}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'organic_rank', 0))}</td><td style='padding:6px;text-align:right'>{escape(str(getattr(r, 'rank_change_label', '—')))}</td></tr>"
         for r in kw_move.itertuples(index=False)
     )
 
@@ -533,8 +579,8 @@ def render_html(context: dict[str, Any]) -> str:
         ("promo_label", "Promo"), ("item_promo_discount", "Discount"), ("gross_item_sales", "Gross"), ("net_item_sales", "Net"), ("orders", "Orders"), ("units", "Units")
     ], money={"item_promo_discount", "gross_item_sales", "net_item_sales"}, integer={"orders", "units"})
     keyword_table = render_table(keywords.to_dict("records"), [
-        ("keyword", "Keyword"), ("search_volume", "H10 Search Vol."), ("keyword_sales", "H10 Kw Sales"), ("organic_rank", "Org. Rank"), ("sponsored_rank", "Spon. Rank"), ("cpr", "CPR"), ("iq_score", "IQ"), ("trend", "Trend"), ("est_brand_keyword_sales", "SQP Brand Sales"), ("brand_purchase_per_click", "Brand Purch./Click")
-    ], money={"est_brand_keyword_sales"}, pct={"brand_purchase_per_click"}, integer={"search_volume", "keyword_sales", "organic_rank", "sponsored_rank", "trend"})
+        ("keyword", "Keyword"), ("search_volume", "H10 Search Vol."), ("keyword_sales", "H10 Kw Sales"), ("organic_rank", "Org. Rank"), ("prior_organic_rank", "Prior Org. Rank"), ("rank_change_label", "Rank Change"), ("sponsored_rank", "Spon. Rank"), ("cpr", "CPR"), ("iq_score", "IQ"), ("trend", "Trend"), ("est_brand_keyword_sales", "SQP Brand Sales"), ("brand_purchase_per_click", "Brand Purch./Click")
+    ], money={"est_brand_keyword_sales"}, pct={"brand_purchase_per_click"}, integer={"search_volume", "keyword_sales", "organic_rank", "prior_organic_rank", "sponsored_rank", "trend"})
 
     return f"""
 <div style="font-family:Arial,Helvetica,sans-serif;color:#242424;max-width:980px;margin:0 auto;background:#fff">
@@ -552,7 +598,7 @@ def render_html(context: dict[str, Any]) -> str:
   <h2 style="font-size:20px;margin:20px 0 10px">Charts</h2>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare all-orders gross item sales within this two-week view.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Largest collection movers by absolute WoW sales delta; red = decline, green = gain.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div>
-  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>H10 keyword demand / rank</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars show H10 estimated weekly keyword sales relative to the top row in this chart; rank is the best organic rank found across fetched Mellanni ASINs. H10 metrics are estimates; SQP is layered only for purchase-behavior diagnostics.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
+  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>H10 keyword demand / rank movement</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars show H10 estimated weekly keyword sales relative to the top row in this chart; rank is the best organic rank found across fetched Mellanni ASINs. Rank change compares this H10 pull against the prior report’s H10 snapshot: Up means rank improved, Down means rank fell. H10 metrics are estimates; SQP is layered only for purchase-behavior diagnostics.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
 
   <h2 style="font-size:18px;margin:18px 0 8px">Product / collection conversion change</h2>{product_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Top ASINs</h2>{asin_table}
