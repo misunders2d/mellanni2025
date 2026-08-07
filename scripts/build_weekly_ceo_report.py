@@ -456,6 +456,28 @@ def render_html(context: dict[str, Any]) -> str:
     if keywords.empty:
         raise SystemExit("H10 keyword table is empty; no H10 == no report")
     h10_terms = ", ".join(escape(str(k)) for k in keywords.head(3)["keyword"].tolist())
+
+    sales_up = m["gross_sales"] > m["prior_gross_sales"]
+    sales_down = m["gross_sales"] < m["prior_gross_sales"]
+    conv_up = m["conversion"] > m["prior_conversion"]
+    conv_down = m["conversion"] < m["prior_conversion"]
+    if sales_up and conv_down:
+        first_takeaway = "Sales grew, but conversion weakened."
+        first_action = "Do not simply buy more traffic. Audit offer/PDP friction first: price, coupon, inventory, reviews, hero image, and mobile content."
+    elif sales_down and conv_up:
+        first_takeaway = "Sales fell because traffic fell, but conversion improved."
+        first_action = "Restore qualified traffic to the biggest ASINs while protecting the better conversion rate; check PPC coverage, organic rank, and lost session sources before adding more discounts."
+    elif sales_down and conv_down:
+        first_takeaway = "Sales and conversion both fell."
+        first_action = "Fix conversion blockers before scaling traffic: review price, coupon, Buy Box, inventory, reviews, hero image, and mobile content on the top ASINs."
+    elif sales_up and conv_up:
+        first_takeaway = "Sales and conversion both improved."
+        first_action = "Protect what is working and scale carefully: verify inventory, keep promo pressure controlled, and expand only the best-performing traffic/keyword coverage."
+    else:
+        first_takeaway = "Sales held roughly steady."
+        first_action = "Hold the current approach, then focus this week on the largest ASIN and keyword movements instead of broad changes."
+    first_why = f"Gross sales reached {fmt_money(m['gross_sales'])} ({sales_delta}); sessions {sessions_phrase} {fmt_int(m['sessions'])}; conversion {conversion_phrase} {fmt_pct(m['conversion'], 2)} ({conv_delta})."
+
     top_asin_details = []
     for r in asins.head(2).to_dict("records"):
         label = " ".join(str(r.get(x, "")).strip() for x in ["size", "color", "collection"] if str(r.get(x, "")).strip())
@@ -465,7 +487,7 @@ def render_html(context: dict[str, Any]) -> str:
   <h2 style="font-size:22px;margin:18px 0 10px;color:#111827">Actions / Takeaways</h2>
   <table style="width:100%;border-collapse:collapse;margin:0 0 18px;font-size:14px;line-height:1.45">
     <tr><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3;width:25%">Takeaway</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">Why it matters</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">This week’s action</th></tr>
-    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Sales grew, but efficiency got worse.</td><td style="padding:9px;border:1px solid #fecdd3">Gross sales reached {fmt_money(m['gross_sales'])} ({sales_delta}) because sessions {sessions_phrase} {fmt_int(m['sessions'])}. Conversion {conversion_phrase} {fmt_pct(m['conversion'], 2)} ({conv_delta}), so traffic quality/offer conversion is the issue.</td><td style="padding:9px;border:1px solid #fecdd3">Do not simply buy more traffic. Audit offer/PDP friction first: price, coupon, inventory, reviews, hero image, and mobile content.</td></tr>
+    <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">{first_takeaway}</td><td style="padding:9px;border:1px solid #fecdd3">{first_why}</td><td style="padding:9px;border:1px solid #fecdd3">{first_action}</td></tr>
     <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Start with the biggest money ASINs.</td><td style="padding:9px;border:1px solid #fecdd3">{top_asin_evidence}</td><td style="padding:9px;border:1px solid #fecdd3">Assign owner to review these top ASINs and list exact fixes before next week’s report.</td></tr>
     <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Use H10 for keywords; use SQP for shopper behavior.</td><td style="padding:9px;border:1px solid #fecdd3">H10 confirms priority demand pools: {h10_terms}. SQP should explain click/purchase behavior on those terms, not create a separate keyword list.</td><td style="padding:9px;border:1px solid #fecdd3">Check listing and PPC coverage for these H10 terms, then use SQP to see whether shoppers click and buy after seeing Mellanni.</td></tr>
   </table>'''
