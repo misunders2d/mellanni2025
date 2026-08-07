@@ -46,6 +46,20 @@ def main() -> int:
     h10_path = report_dir / "h10" / "h10_keyword_candidates.csv"
     if not h10_path.exists() or len(pd.read_csv(h10_path)) == 0:
         raise SystemExit(f"Missing mandatory H10 artifact: {h10_path}")
+    prior_h10_path = report_dir / "h10" / "h10_prior_keyword_candidates.csv"
+    if prior_h10_path.exists():
+        h10_movement_labels = [
+            "H10 keyword demand / rank movement",
+            "Relative H10 keyword-sales estimate",
+            "H10 est. weekly keyword sales",
+            "Best organic rank",
+            "Rank change vs prior H10",
+            "Up means rank improved",
+            "Down means rank fell",
+        ]
+        missing_h10_movement_labels = [label for label in h10_movement_labels if label not in html]
+        if missing_h10_movement_labels:
+            raise SystemExit("HTML missing required H10 movement labels: " + ", ".join(missing_h10_movement_labels))
     if "See attached workbook for full Top ASINs table" in html:
         raise SystemExit("HTML still has shortened Top ASIN placeholder")
     if not xlsx_path.exists():

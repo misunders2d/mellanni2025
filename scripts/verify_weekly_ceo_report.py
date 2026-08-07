@@ -68,6 +68,9 @@ def main() -> int:
     h10_movement_required = prior_h10_path.exists()
     h10_movement_labels_present = all(label in html for label in [
         "H10 keyword demand / rank movement",
+        "Relative H10 keyword-sales estimate",
+        "H10 est. weekly keyword sales",
+        "Best organic rank",
         "Rank change vs prior H10",
         "Up means rank improved",
         "Down means rank fell",
