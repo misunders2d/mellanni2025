@@ -154,3 +154,4 @@ sales_Canada_practice.db
 restock_canada.db
 
 reports_data/
+reports/daily_sales/**/draft_status_*.json
