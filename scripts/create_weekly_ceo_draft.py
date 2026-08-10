@@ -28,6 +28,18 @@ def main() -> int:
     p.add_argument("--week-end", required=True)
     args = p.parse_args()
     report_dir = args.report_dir.resolve()
+    account_path = report_dir / "source_data_kiosk_account_by_date.csv"
+    if not account_path.exists():
+        raise SystemExit(f"Missing mandatory account-by-date headline source: {account_path}")
+    verifier = Path(__file__).with_name("verify_weekly_ceo_report.py")
+    verification = subprocess.run(
+        [sys.executable, str(verifier), "--report-dir", str(report_dir), "--week-end", args.week_end],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if verification.returncode != 0:
+        raise SystemExit("Weekly CEO verification failed; Gmail draft blocked")
     html_path = report_dir / f"email_body_{args.week_end}.html"
     xlsx_path = report_dir / f"Mellanni_Weekly_CEO_Overview_{args.week_end}.xlsx"
     html = html_path.read_text(encoding="utf-8")
@@ -54,8 +66,9 @@ def main() -> int:
             "H10 est. weekly keyword sales",
             "Best organic rank",
             "Rank change vs prior H10",
-            "Up means rank improved",
-            "Down means rank fell",
+            "rank_movement = prior_position - current_position",
+            "green ↓ N",
+            "red ↑ N",
         ]
         missing_h10_movement_labels = [label for label in h10_movement_labels if label not in html]
         if missing_h10_movement_labels:

@@ -10,6 +10,7 @@ extracts into an XLSX workbook, Gmail-safe HTML body, and verification JSON.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -34,6 +35,7 @@ DEFAULT_PROJECT_ROOT = Path("/media/misunderstood/DATA/projects/mellanni2025").r
 
 REQUIRED_FILES = {
     "validation": "validation.csv",
+    "account_by_date": "source_data_kiosk_account_by_date.csv",
     "trend": "conversion_trend.csv",
     "products": "product_performance.csv",
     "asins": "asin_performance_size_color.csv",
@@ -44,10 +46,14 @@ REQUIRED_FILES = {
 
 H10_FILE = Path("h10/h10_keyword_candidates.csv")
 PRIOR_H10_FILE = Path("h10/h10_prior_keyword_candidates.csv")
+ACCOUNT_NORMALIZED_FILE = Path("source_data_kiosk_account_by_date.csv")
+ACCOUNT_RAW_FILE = Path("source_data_kiosk_account_by_date_raw.jsonl")
+ACCOUNT_MANIFEST_FILE = Path("source_data_kiosk_account_by_date_manifest.json")
 H10_REQUIRED_COLUMNS = {"source", "asin", "keyword", "search_volume", "organic_rank", "sponsored_rank", "cpr", "iq_score", "title_density", "competing_products", "keyword_sales", "cpc", "trend"}
 
 REQUIRED_COLUMNS = {
     "validation": {"min_date", "max_date", "row_count", "current_rows", "prior_rows", "negative_metric_rows"},
+    "account_by_date": {"date", "sales", "orders", "units", "sessions", "unit_conversion"},
     "trend": {"week_start", "week_end", "gross_sales", "sessions", "units", "unit_conversion"},
     "products": {"collection", "sales", "prior_sales", "sessions", "prior_sessions", "units", "prior_units", "unit_conversion", "prior_conversion", "conversion_pp"},
     "asins": {"asin", "collection", "size", "color", "sales", "prior_sales", "sessions", "prior_sessions", "units", "prior_units", "conversion", "prior_conversion", "conversion_change_pp"},
@@ -95,6 +101,165 @@ def week_dates(week_end_s: str) -> dict[str, date]:
     prior_end = week_start - timedelta(days=1)
     prior_start = prior_end - timedelta(days=6)
     return {"week_start": week_start, "week_end": week_end, "prior_start": prior_start, "prior_end": prior_end}
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_account_provenance(report_dir: Path, dates: dict[str, date]) -> list[Check]:
+    checks: list[Check] = []
+    manifest_path = report_dir / ACCOUNT_MANIFEST_FILE
+    raw_path = report_dir / ACCOUNT_RAW_FILE
+    normalized_path = report_dir / ACCOUNT_NORMALIZED_FILE
+    if not manifest_path.exists() or not raw_path.exists() or not normalized_path.exists():
+        checks.append(Check("account_source_provenance", "fail", "manifest, raw Data Kiosk document, and normalized account extract are required"))
+        return checks
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        checks.append(Check("account_source_provenance", "fail", f"invalid manifest: {exc}"))
+        return checks
+    required = {
+        "source": "SP-API Data Kiosk",
+        "dataset": "analytics_salesAndTraffic_2024_04_24.salesAndTrafficByDate",
+        "aggregate_by": "DAY",
+        "marketplace_id": "ATVPDKIKX0DER",
+        "start_date": str(dates["prior_start"]),
+        "end_date": str(dates["week_end"]),
+        "raw_file": ACCOUNT_RAW_FILE.name,
+        "normalized_file": ACCOUNT_NORMALIZED_FILE.name,
+        "row_count": 14,
+    }
+    metadata_ok = all(manifest.get(key) == value for key, value in required.items())
+    identity_ok = bool(manifest.get("query_id")) and bool(manifest.get("document_id"))
+    raw_hash_ok = manifest.get("raw_sha256") == sha256_file(raw_path)
+    normalized_hash_ok = manifest.get("normalized_sha256") == sha256_file(normalized_path)
+    try:
+        raw_rows = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        expected_dates = {str(dates["prior_start"] + timedelta(days=i)) for i in range(14)}
+        by_date_shape = (
+            len(raw_rows) == 14
+            and {str(row.get("startDate")) for row in raw_rows} == expected_dates
+            and all(
+                "startDate" in row and row.get("endDate") == row.get("startDate")
+                and row.get("marketplaceId") == "ATVPDKIKX0DER"
+                and "childAsin" not in row and "sku" not in row
+                and "sales" in row and "traffic" in row for row in raw_rows
+            )
+        )
+        expected = pd.DataFrame([{
+            "date": row["startDate"],
+            "sales": row["sales"]["orderedProductSales"]["amount"],
+            "orders": row["sales"]["totalOrderItems"],
+            "units": row["sales"]["unitsOrdered"],
+            "sessions": row["traffic"]["sessions"],
+            "unit_conversion": row["traffic"]["unitSessionPercentage"] / 100,
+        } for row in raw_rows]).sort_values("date").reset_index(drop=True)
+        normalized = pd.read_csv(normalized_path).sort_values("date").reset_index(drop=True)[expected.columns]
+        normalized_matches_raw = by_date_shape and len(normalized) == len(expected)
+        for col in ["sales", "orders", "units", "sessions", "unit_conversion"]:
+            normalized_matches_raw = normalized_matches_raw and all(
+                math.isclose(float(a), float(b), rel_tol=0.0, abs_tol=1e-12)
+                for a, b in zip(normalized[col], expected[col])
+            )
+        normalized_matches_raw = normalized_matches_raw and normalized["date"].astype(str).equals(expected["date"].astype(str))
+    except Exception:
+        by_date_shape = False
+        normalized_matches_raw = False
+    ok = metadata_ok and identity_ok and raw_hash_ok and normalized_hash_ok and by_date_shape and normalized_matches_raw
+    checks.append(Check(
+        "account_source_provenance",
+        "pass" if ok else "fail",
+        f"metadata={metadata_ok}; identity={identity_ok}; raw_hash={raw_hash_ok}; normalized_hash={normalized_hash_ok}; by_date_shape={by_date_shape}; normalized_matches_raw={normalized_matches_raw}",
+    ))
+    return checks
+
+
+def validate_account_source(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tuple[pd.DataFrame, list[Check]]:
+    """Validate headline conversion against independent account-by-date totals."""
+    checks: list[Check] = []
+    account = data.get("account_by_date", pd.DataFrame()).copy()
+    trend = data.get("trend", pd.DataFrame()).copy()
+    products = data.get("products", pd.DataFrame()).copy()
+    if account.empty or trend.empty or products.empty:
+        checks.append(Check("account_headline_source", "fail", "account-by-date, trend, and product inputs are required"))
+        return pd.DataFrame(), checks
+
+    account["date"] = pd.to_datetime(account["date"], errors="coerce").dt.date
+    for col in ["sales", "orders", "units", "sessions", "unit_conversion"]:
+        account[col] = pd.to_numeric(account[col], errors="coerce")
+    trend["week_end"] = pd.to_datetime(trend["week_end"], errors="coerce").dt.date
+    for col in ["sessions", "units", "unit_conversion"]:
+        trend[col] = pd.to_numeric(trend[col], errors="coerce")
+    for col in ["sales", "prior_sales", "units", "prior_units", "sessions", "prior_sessions"]:
+        products[col] = pd.to_numeric(products[col], errors="coerce")
+
+    rows: list[dict[str, Any]] = []
+    periods = [
+        ("prior", dates["prior_start"], dates["prior_end"], "prior_"),
+        ("current", dates["week_start"], dates["week_end"], ""),
+    ]
+    for label, start, end, product_prefix in periods:
+        period = account[account["date"].between(start, end)]
+        trend_row = trend[trend["week_end"] == end]
+        coverage_ok = len(period) == 7 and period["date"].nunique() == 7
+        checks.append(Check(f"account_by_date_coverage:{label}", "pass" if coverage_ok else "fail", f"rows={len(period)}; unique_days={period['date'].nunique()}"))
+        if not coverage_ok or len(trend_row) != 1:
+            checks.append(Check(f"account_headline_match:{label}", "fail", f"trend_rows={len(trend_row)}"))
+            continue
+        account_units_raw = float(period["units"].sum())
+        account_sessions_raw = float(period["sessions"].sum())
+        daily_integral = all(
+            math.isfinite(float(value)) and float(value).is_integer()
+            for value in pd.concat([period["units"], period["sessions"]])
+        )
+        integral_source = (
+            daily_integral
+            and math.isfinite(account_units_raw)
+            and math.isfinite(account_sessions_raw)
+            and account_units_raw.is_integer()
+            and account_sessions_raw.is_integer()
+        )
+        account_units = int(account_units_raw) if integral_source else 0
+        account_sessions = int(account_sessions_raw) if integral_source else 0
+        account_sales = float(period["sales"].sum())
+        account_conversion = account_units / account_sessions if integral_source and account_sessions else math.nan
+        tr = trend_row.iloc[0]
+        trend_units = float(tr["units"])
+        trend_sessions = float(tr["sessions"])
+        integral_trend = math.isfinite(trend_units) and math.isfinite(trend_sessions) and trend_units.is_integer() and trend_sessions.is_integer()
+        exact = (
+            integral_source
+            and integral_trend
+            and trend_units == account_units_raw
+            and trend_sessions == account_sessions_raw
+            and math.isclose(float(tr["unit_conversion"]), account_conversion, rel_tol=0.0, abs_tol=1e-12)
+        )
+        checks.append(Check(
+            f"account_headline_match:{label}",
+            "pass" if exact else "fail",
+            f"account={account_units}/{account_sessions}={account_conversion:.12f}; trend={tr['units']}/{tr['sessions']}={float(tr['unit_conversion']):.12f}",
+        ))
+        product_values = {
+            "sales": float(products[f"{product_prefix}sales"].sum()),
+            "units": float(products[f"{product_prefix}units"].sum()),
+            "sessions": float(products[f"{product_prefix}sessions"].sum()),
+        }
+        account_values = {"sales": account_sales, "units": float(account_units), "sessions": float(account_sessions)}
+        for metric in ["sales", "units", "sessions"]:
+            rows.append({
+                "period": label,
+                "metric": metric,
+                "account_by_date": account_values[metric],
+                "product_grain": product_values[metric],
+                "product_minus_account": product_values[metric] - account_values[metric],
+            })
+    return pd.DataFrame(rows), checks
 
 
 def read_inputs(report_dir: Path) -> tuple[dict[str, pd.DataFrame], list[Check]]:
@@ -204,10 +369,10 @@ def format_rank_change(value: Any) -> str:
             return "—"
         n = int(round(float(value)))
         if n > 0:
-            return f"Up {n}"
+            return f"↓ {n}"
         if n < 0:
-            return f"Down {abs(n)}"
-        return "Flat"
+            return f"↑ {abs(n)}"
+        return "0"
     except Exception:
         return "—"
 
@@ -451,6 +616,8 @@ def render_table(rows: list[dict[str, Any]], columns: list[tuple[str, str]], mon
                         color = "#0f8a4b" if num >= 0 else "#b91c1c"
                 except Exception:
                     pass
+            if key == "rank_change_label":
+                color = "#0f8a4b" if str(val).startswith("↓") else ("#b91c1c" if str(val).startswith("↑") else "#667085")
             tds.append(f"<td style='padding:8px;border:1px solid #e5e7eb;color:{color}'>{text}</td>")
         trs.append("<tr>" + "".join(tds) + "</tr>")
     return f"<table style='border-collapse:collapse;width:100%;font-size:13px;margin:8px 0 16px'><tr>{th}</tr>{''.join(trs)}</table>"
@@ -463,6 +630,25 @@ def render_html(context: dict[str, Any]) -> str:
     asins = context["asins"].head(12)
     promos = context["promos"].head(10)
     keywords = context["keywords"].head(15)
+    reconciliation = context.get("source_reconciliation", pd.DataFrame())
+    current_reconciliation = reconciliation[reconciliation["period"].eq("current")] if not reconciliation.empty else pd.DataFrame()
+    deltas = {str(r.metric): float(r.product_minus_account) for r in current_reconciliation.itertuples(index=False)}
+
+    def signed_count(value: float) -> str:
+        return "0" if abs(value) < 0.5 else f"{value:+,.0f}"
+
+    def signed_money(value: float) -> str:
+        if abs(value) < 0.005:
+            return "$0.00"
+        return f"{'+' if value > 0 else '-'}${abs(value):,.2f}"
+
+    source_note = (
+        "Headline units, sessions, and conversion use Amazon account-by-date totals: "
+        f"{fmt_int(m['units'])} / {fmt_int(m['sessions'])} = {fmt_pct(m['conversion'], 2)}. "
+        "Product and ASIN tables use Amazon CHILD-grain data; Amazon's child report differs from account totals by "
+        f"{signed_count(deltas.get('units', 0))} units, {signed_money(deltas.get('sales', 0))}, and {signed_count(deltas.get('sessions', 0))} sessions. "
+        "Gross sales uses the separate all-orders source."
+    )
 
     sales_delta, sales_color = delta_line(m["gross_sales"], m["prior_gross_sales"])
     net_delta, net_color = delta_line(m["net_item_sales"], m["prior_net_item_sales"])
@@ -565,7 +751,7 @@ def render_html(context: dict[str, Any]) -> str:
         "</tr>"
     )
     keyword_rows = keyword_header + "".join(
-        f"<tr><td style='padding:6px'>{escape(str(r.keyword))}</td><td style='padding:6px'>{html_bar(getattr(r, 'keyword_sales', 0), max_kw_sales, '#2563eb')}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'keyword_sales', 0))}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'organic_rank', 0))}</td><td style='padding:6px;text-align:right'>{escape(str(getattr(r, 'rank_change_label', '—')))}</td></tr>"
+        f"<tr><td style='padding:6px'>{escape(str(r.keyword))}</td><td style='padding:6px'>{html_bar(getattr(r, 'keyword_sales', 0), max_kw_sales, '#2563eb')}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'keyword_sales', 0))}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'organic_rank', 0))}</td><td style='padding:6px;text-align:right;color:{'#0f8a4b' if str(getattr(r, 'rank_change_label', '—')).startswith('↓') else ('#b91c1c' if str(getattr(r, 'rank_change_label', '—')).startswith('↑') else '#667085')}'>{escape(str(getattr(r, 'rank_change_label', '—')))}</td></tr>"
         for r in kw_move.itertuples(index=False)
     )
 
@@ -583,6 +769,7 @@ def render_html(context: dict[str, Any]) -> str:
     ], money={"est_brand_keyword_sales"}, pct={"brand_purchase_per_click"}, integer={"search_volume", "keyword_sales", "organic_rank", "prior_organic_rank", "sponsored_rank", "trend"})
 
     return f"""
+<meta charset="utf-8">
 <div style="font-family:Arial,Helvetica,sans-serif;color:#242424;max-width:980px;margin:0 auto;background:#fff">
   <div style="background:#111827;color:#fff;padding:24px 26px;margin-bottom:14px">
     <h1 style="margin:0 0 8px;font-size:26px;line-height:1.2">Mellanni Weekly CEO Overview</h1>
@@ -594,11 +781,12 @@ def render_html(context: dict[str, Any]) -> str:
   <h2 style="font-size:20px;margin:20px 0 12px">Executive snapshot</h2>
   <table style="width:100%;border-spacing:8px;margin:0 0 12px"><tr>{cards_html}</tr></table>
   <ul style="margin:8px 0 16px;padding-left:22px;line-height:1.45">{''.join(f'<li>{b}</li>' for b in bullets)}</ul>
+  <div style="border:1px solid #d9e2ec;background:#f8fafc;padding:10px 12px;margin:14px 0;font-size:12px;color:#475467"><b>Source reconciliation:</b> {source_note}</div>
 
   <h2 style="font-size:20px;margin:20px 0 10px">Charts</h2>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare all-orders gross item sales within this two-week view.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Largest collection movers by absolute WoW sales delta; red = decline, green = gain.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div>
-  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>H10 keyword demand / rank movement</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars show H10 estimated weekly keyword sales relative to the top row in this chart; rank is the best organic rank found across fetched Mellanni ASINs. Rank change compares this H10 pull against the prior report’s H10 snapshot: Up means rank improved, Down means rank fell. H10 metrics are estimates; SQP is layered only for purchase-behavior diagnostics.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
+  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>H10 keyword demand / rank movement</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars show H10 estimated weekly keyword sales relative to the top row in this chart; rank is the best organic rank found across fetched Mellanni ASINs. Rank change compares this H10 pull against the prior report’s H10 snapshot: rank_movement = prior_position - current_position. Positive means rank number dropped/improved (green ↓ N); negative means rank number rose/worsened (red ↑ N); zero is neutral 0. H10 metrics are estimates; SQP is layered only for purchase-behavior diagnostics.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
 
   <h2 style="font-size:18px;margin:18px 0 8px">Product / collection conversion change</h2>{product_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Top ASINs</h2>{asin_table}
@@ -624,6 +812,7 @@ def write_workbook(context: dict[str, Any], out: Path) -> None:
         ]
         pd.DataFrame(summary_rows).to_excel(writer, index=False, sheet_name="Summary")
         context["validation"].to_excel(writer, index=False, sheet_name="Validation")
+        context["source_reconciliation"].to_excel(writer, index=False, sheet_name="Source Reconciliation")
         context["trend"].to_excel(writer, index=False, sheet_name="Trend")
         context["net_sales"].to_excel(writer, index=False, sheet_name="Net Sales")
         context["products"].to_excel(writer, index=False, sheet_name="Products")
@@ -662,6 +851,11 @@ def write_workbook(context: dict[str, Any], out: Path) -> None:
                     for c in cell:
                         if isinstance(c.value, (int, float)):
                             c.number_format = '#,##0'
+            if header == "rank_change_label":
+                for cell in ws.iter_cols(min_col=idx, max_col=idx, min_row=2):
+                    for c in cell:
+                        text = str(c.value or "")
+                        c.font = Font(color="0F8A4B" if text.startswith("↓") else ("B91C1C" if text.startswith("↑") else "667085"))
     wb.save(out)
 
 
@@ -673,7 +867,11 @@ def main() -> int:
     report_dir.mkdir(parents=True, exist_ok=True)
 
     data, checks = read_inputs(report_dir)
+    checks.extend(validate_account_provenance(report_dir, dates))
+    source_reconciliation, account_checks = validate_account_source(data, dates)
+    checks.extend(account_checks)
     context, more_checks = build_context(data, dates)
+    context["source_reconciliation"] = source_reconciliation
     checks.extend(more_checks)
 
     week_end = dates["week_end"].isoformat()
