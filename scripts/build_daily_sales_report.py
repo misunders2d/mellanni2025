@@ -355,6 +355,7 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
         </td>
       </tr>""")
     return f"""
+<meta charset="utf-8">
 <div style="font-family:Arial,Helvetica,sans-serif;color:#242424;max-width:980px;margin:0 auto;background:#fff">
   <div style="background:#111827;color:#fff;padding:24px 26px;margin-bottom:14px">
     <h1 style="margin:0 0 8px;font-size:26px;line-height:1.2">Mellanni Daily Sales Report</h1>
