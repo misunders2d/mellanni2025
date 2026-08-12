@@ -79,6 +79,20 @@ class DealCalendarGateTest(unittest.TestCase):
         self.assertTrue(all(c.status == "pass" for c in checks))
         self.assertEqual(result["2026-08-15"]["status"], "Best Deal")
 
+    def test_accepts_one_calendar_day_best_deal_across_spring_dst(self) -> None:
+        path = self.write_evidence({
+            "2026-03-08": {"checked": True, "events": [{
+                "summary": "Spring DST all-day Best Deal",
+                "start": "2026-03-08",
+                "end": "2026-03-09",
+                "status": "confirmed",
+            }]},
+        })
+        checks = []
+        result = REPORT.read_deal_calendar(path, ["2026-03-08"], checks)
+        self.assertTrue(all(c.status == "pass" for c in checks))
+        self.assertEqual(result["2026-03-08"]["status"], "Best Deal")
+
     def test_rejects_missing_date_check(self) -> None:
         path = self.write_evidence({"2026-08-11": {"checked": True, "events": []}})
         checks = []

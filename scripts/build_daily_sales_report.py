@@ -20,7 +20,7 @@ import json
 import math
 import sys
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -319,12 +319,15 @@ def read_deal_calendar(path: Path | None, dates: list[str], checks: list[Check])
         valid = source_ok and bounds_ok
         for event in item["events"]:
             try:
-                start = parse_calendar_timestamp(event["start"])
-                end = parse_calendar_timestamp(event["end"])
-                hours = (end - start).total_seconds() / 3600
+                start_text = str(event["start"])
+                end_text = str(event["end"])
+                start = parse_calendar_timestamp(start_text)
+                end = parse_calendar_timestamp(end_text)
+                all_day = len(start_text) == 10 and len(end_text) == 10
+                duration = (date.fromisoformat(end_text) - date.fromisoformat(start_text)).days if all_day else (end - start).total_seconds() / 3600
                 overlaps = start < day_end and end > day_start
                 confirmed = event.get("status") == "confirmed"
-                deal_type = "Lightning Deal" if 4 <= hours <= 12 else "Best Deal" if hours >= 24 else "Invalid"
+                deal_type = "Best Deal" if all_day and duration >= 1 else "Lightning Deal" if 4 <= duration <= 12 else "Best Deal" if duration >= 24 else "Invalid"
                 valid = valid and overlaps and confirmed and deal_type != "Invalid"
                 normalized.append({
                     "name": str(event.get("summary") or "Unnamed deal"),
