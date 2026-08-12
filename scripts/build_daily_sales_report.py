@@ -270,6 +270,17 @@ def read_spend(path: Path | None, dates: list[str], checks: list[Check]) -> dict
     return out
 
 
+def parse_calendar_timestamp(value: Any) -> pd.Timestamp:
+    """Normalize RFC3339 date-times or Calendar all-day dates to Pacific time."""
+    text = str(value)
+    timestamp = pd.Timestamp(text)
+    if timestamp.tzinfo is None:
+        if text != timestamp.strftime("%Y-%m-%d"):
+            raise ValueError("timezone required for non-all-day Calendar event")
+        timestamp = timestamp.tz_localize("America/Los_Angeles")
+    return timestamp.tz_convert("America/Los_Angeles")
+
+
 def read_deal_calendar(path: Path | None, dates: list[str], checks: list[Check]) -> dict[str, dict[str, Any]]:
     """Validate raw deal-calendar evidence and classify events by duration."""
     empty = {d: {"status": "Unverified", "events": []} for d in dates}
@@ -308,8 +319,8 @@ def read_deal_calendar(path: Path | None, dates: list[str], checks: list[Check])
         valid = source_ok and bounds_ok
         for event in item["events"]:
             try:
-                start = pd.Timestamp(event["start"]).tz_convert("America/Los_Angeles")
-                end = pd.Timestamp(event["end"]).tz_convert("America/Los_Angeles")
+                start = parse_calendar_timestamp(event["start"])
+                end = parse_calendar_timestamp(event["end"])
                 hours = (end - start).total_seconds() / 3600
                 overlaps = start < day_end and end > day_start
                 confirmed = event.get("status") == "confirmed"

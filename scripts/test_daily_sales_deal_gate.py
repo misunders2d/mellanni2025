@@ -65,6 +65,20 @@ class DealCalendarGateTest(unittest.TestCase):
         self.assertEqual(result["2026-08-04"]["status"], "Lightning Deal")
         self.assertEqual(result["2026-08-15"]["status"], "Best Deal")
 
+    def test_accepts_date_only_all_day_best_deal(self) -> None:
+        path = self.write_evidence({
+            "2026-08-15": {"checked": True, "events": [{
+                "summary": "All-day Best Deal",
+                "start": "2026-08-14",
+                "end": "2026-08-17",
+                "status": "confirmed",
+            }]},
+        })
+        checks = []
+        result = REPORT.read_deal_calendar(path, ["2026-08-15"], checks)
+        self.assertTrue(all(c.status == "pass" for c in checks))
+        self.assertEqual(result["2026-08-15"]["status"], "Best Deal")
+
     def test_rejects_missing_date_check(self) -> None:
         path = self.write_evidence({"2026-08-11": {"checked": True, "events": []}})
         checks = []
