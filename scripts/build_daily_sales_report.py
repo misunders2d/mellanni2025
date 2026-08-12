@@ -47,6 +47,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--prior-collection", type=Path, help="Optional prior collection breakdown CSV")
     p.add_argument("--dictionary", type=Path, help="Full dictionary CSV with asin, collection")
     p.add_argument("--spend-hourly", type=Path, help="Raw hourly Sheet CSV with date_pt, hour_pt, spend")
+    p.add_argument("--deal-calendar", type=Path, help="Google Calendar deal-event JSON; default deal_calendar_status.json")
     p.add_argument("--order-summary", type=Path, help="Optional exact order summary CSV with date_pt,sales,units,orders,rows")
     p.add_argument("--sales-api-control", type=Path, help="Optional SP-API Sales API control CSV with date_pt,sales,units,orders")
     p.add_argument("--strict", action="store_true", help="Exit non-zero unless verification status is pass")
@@ -269,6 +270,65 @@ def read_spend(path: Path | None, dates: list[str], checks: list[Check]) -> dict
     return out
 
 
+def read_deal_calendar(path: Path | None, dates: list[str], checks: list[Check]) -> dict[str, dict[str, Any]]:
+    """Validate raw deal-calendar evidence and classify events by duration."""
+    empty = {d: {"status": "Unverified", "events": []} for d in dates}
+    if not path or not path.exists():
+        checks.append(Check("deal_calendar_file", "fail", "missing deal_calendar_status.json"))
+        return empty
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        checks.append(Check("deal_calendar_file", "fail", f"invalid JSON: {exc}"))
+        return empty
+    source_ok = (
+        data.get("source") == "Google Calendar Events API"
+        and data.get("calendar_name") == "Lightning Deals"
+        and isinstance(data.get("calendar_id"), str)
+        and bool(data.get("calendar_id"))
+    )
+    checks.append(Check("deal_calendar_source", "pass" if source_ok else "fail", f"source={data.get('source')}; calendar={data.get('calendar_name')}; calendar_id_present={bool(data.get('calendar_id'))}"))
+    raw_dates = data.get("dates") if isinstance(data.get("dates"), dict) else {}
+    out: dict[str, dict[str, Any]] = {}
+    for day in dates:
+        item = raw_dates.get(day)
+        if not isinstance(item, dict) or item.get("checked") is not True or not isinstance(item.get("events"), list):
+            checks.append(Check(f"deal_calendar:{day}", "fail", "date missing, not checked, or events not a list"))
+            out[day] = empty[day]
+            continue
+        day_start = pd.Timestamp(day, tz="America/Los_Angeles")
+        day_end = pd.Timestamp(day_start.date() + timedelta(days=1), tz="America/Los_Angeles")
+        try:
+            time_min = pd.Timestamp(item["time_min"]).tz_convert("America/Los_Angeles")
+            time_max = pd.Timestamp(item["time_max"]).tz_convert("America/Los_Angeles")
+            bounds_ok = time_min == day_start and time_max == day_end
+        except Exception:
+            bounds_ok = False
+        normalized: list[dict[str, str]] = []
+        valid = source_ok and bounds_ok
+        for event in item["events"]:
+            try:
+                start = pd.Timestamp(event["start"]).tz_convert("America/Los_Angeles")
+                end = pd.Timestamp(event["end"]).tz_convert("America/Los_Angeles")
+                hours = (end - start).total_seconds() / 3600
+                overlaps = start < day_end and end > day_start
+                confirmed = event.get("status") == "confirmed"
+                deal_type = "Lightning Deal" if 4 <= hours <= 12 else "Best Deal" if hours >= 24 else "Invalid"
+                valid = valid and overlaps and confirmed and deal_type != "Invalid"
+                normalized.append({
+                    "name": str(event.get("summary") or "Unnamed deal"),
+                    "deal_type": deal_type,
+                    "start_pt": start.isoformat(),
+                    "end_pt": end.isoformat(),
+                })
+            except Exception:
+                valid = False
+        status = "None" if not normalized else " + ".join(sorted({event["deal_type"] for event in normalized}))
+        checks.append(Check(f"deal_calendar:{day}", "pass" if valid else "fail", f"events={len(normalized)}, status={status}, bounds_ok={bounds_ok}"))
+        out[day] = {"status": status if valid else "Unverified", "events": normalized if valid else []}
+    return out
+
+
 def fmt_money(v: float, digits: int = 0) -> str:
     return f"${float(v):,.{digits}f}"
 
@@ -306,7 +366,7 @@ def pct_delta(current: float, prior: float) -> float | None:
     return current / prior - 1
 
 
-def render_html(target_date: str, prior_date: str, current: dict[str, Any], prior: dict[str, Any], spend: dict[str, dict[str, Any]], comp: pd.DataFrame) -> str:
+def render_html(target_date: str, prior_date: str, current: dict[str, Any], prior: dict[str, Any], spend: dict[str, dict[str, Any]], deals: dict[str, dict[str, Any]], comp: pd.DataFrame) -> str:
     cur_spend = spend[target_date]["spend"]
     pri_spend = spend[prior_date]["spend"]
     cur_tacos = cur_spend / current["sales"]
@@ -333,6 +393,18 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
         <div style='font-size:13px;color:{line_color};font-weight:700'>{escape(line)}</div>
       </div>
     </td>""" for label, value, line, line_color in kpis
+    )
+    def deal_text(day: str) -> str:
+        item = deals[day]
+        if item["status"] == "Unverified":
+            return "Unverified — report blocked"
+        if item["status"] == "None":
+            return "No Lightning Deal or Best Deal"
+        return "; ".join(f"{event['deal_type']}: {event['name']}" for event in item["events"])
+
+    deal_rows = "".join(
+        f"<tr><td style='padding:9px;border:1px solid #e5e7eb;font-weight:700'>{day}</td><td style='padding:9px;border:1px solid #e5e7eb'>{escape(deal_text(day))}</td></tr>"
+        for day in [target_date, prior_date]
     )
     render = comp.sort_values(["current_sales", "prior_sales"], ascending=[False, False]).head(12)
     max_sales = max(float(render["current_sales"].max() or 0), float(render["prior_sales"].max() or 0), 1.0)
@@ -370,6 +442,11 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
     <tr><td style="padding:9px;border:1px solid #e5e7eb;font-weight:700">Units</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_int(current['units'])}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_int(prior['units'])}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(units_delta)};font-weight:700">{delta_int(units_delta)} ({units_pct * 100:+.1f}%)</td></tr>
     <tr><td style="padding:9px;border:1px solid #e5e7eb;font-weight:700">PPC Spend</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_money(cur_spend, 2)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_money(pri_spend, 2)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(spend_delta, lower_good=True)};font-weight:700">{delta_money(spend_delta)} ({spend_pct * 100:+.1f}%)</td></tr>
     <tr><td style="padding:9px;border:1px solid #e5e7eb;font-weight:700">TACOS</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_pct(cur_tacos)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_pct(pri_tacos)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(tacos_delta, lower_good=True)};font-weight:700">{delta_pp(tacos_delta)}</td></tr>
+  </table>
+  <h2 style="font-size:20px;margin:20px 0 10px;color:#111827">Deal calendar check</h2>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:18px;font-size:13px">
+    <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Pacific date</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Lightning / Best Deal</th></tr>
+    {deal_rows}
   </table>
   <h2 style="font-size:20px;margin:20px 0 10px;color:#111827">Collection breakdown</h2>
   <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">
@@ -414,6 +491,8 @@ def main() -> int:
 
     spend_path = resolve_default(report_dir, args.spend_hourly, ["ppc_hourly_current_prior.csv"])
     spend = read_spend(spend_path, [target_date, prior_date], checks)
+    deal_path = resolve_default(report_dir, args.deal_calendar, ["deal_calendar_status.json"])
+    deals = read_deal_calendar(deal_path, [target_date, prior_date], checks)
 
     if current_summary["sales"] <= 0:
         checks.append(Check("target_sales_nonzero", "fail", "target sales are zero; TACOS undefined"))
@@ -441,7 +520,7 @@ def main() -> int:
     comp.to_csv(comp_path, index=False)
 
     subject = f"{target_date} results: {fmt_int(current_summary['units'])} units, {fmt_money(current_summary['sales'], 0)} sales, PPC Spend = {fmt_money(spend[target_date]['spend'], 0)} with {fmt_pct(spend[target_date]['spend'] / current_summary['sales'])} TACOS"
-    html_body = render_html(target_date, prior_date, current_summary, prior_summary, spend, comp)
+    html_body = render_html(target_date, prior_date, current_summary, prior_summary, spend, deals, comp)
     html_path = report_dir / f"email_body_{target_date}.html"
     subject_path = report_dir / f"email_subject_{target_date}.txt"
     verification_path = report_dir / f"verification_{target_date}.json"
@@ -459,6 +538,7 @@ def main() -> int:
         "subject": subject,
         "current": current_summary | {"ppc_spend": spend[target_date]["spend"], "spend_hours": spend[target_date]["hours"], "tacos": spend[target_date]["spend"] / current_summary["sales"] if current_summary["sales"] else None},
         "prior": prior_summary | {"ppc_spend": spend[prior_date]["spend"], "spend_hours": spend[prior_date]["hours"], "tacos": spend[prior_date]["spend"] / prior_summary["sales"] if prior_summary["sales"] else None},
+        "deals": deals,
         "checks": [asdict(c) for c in checks],
         "outputs": {"html": rel(html_path), "subject": rel(subject_path), "comparison": rel(comp_path), "verification": rel(verification_path)},
         "draft_created": False,

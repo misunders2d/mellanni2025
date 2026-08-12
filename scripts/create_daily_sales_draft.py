@@ -72,6 +72,7 @@ def main() -> int:
         "Mellanni Daily Sales Report",
         "Prepared by Sergey's AI helper.",
         "Executive snapshot",
+        "Deal calendar check",
         "Collection breakdown",
     ]
     missing = [needle for needle in required if needle not in html]
