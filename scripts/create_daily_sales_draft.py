@@ -18,6 +18,29 @@ from typing import Any
 
 HELPER = Path("/home/misunderstood/.pi/agent/extensions/google_workspace_sa.py")
 DEFAULT_RECIPIENTS_CONFIG = Path("config/daily_sales_recipients.json")
+CHART_CID = "daily-hourly-sales"
+
+
+def build_inline_attachments(report_dir: Path, target_date: str, html: str) -> list[dict[str, Any]]:
+    cid_count = html.lower().count(f"cid:{CHART_CID}")
+    if not cid_count:
+        if "cid:" in html.lower():
+            raise SystemExit("HTML contains an unapproved inline image CID")
+        return []
+    if cid_count != 1 or html.lower().count("cid:") != 1:
+        raise SystemExit("HTML must contain exactly one approved hourly-chart CID")
+    chart_path = report_dir / f"hourly_sales_{target_date}.png"
+    if not chart_path.is_file():
+        raise SystemExit(f"Missing hourly chart image: {chart_path}")
+    return [{
+        "filename": chart_path.name,
+        "mime_type": "image/png",
+        "local_path": str(chart_path),
+        "inline": True,
+        "content_id": CHART_CID,
+    }]
+
+
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,8 +105,9 @@ def main() -> int:
     present_forbidden = [needle for needle in forbidden if needle in html]
     if present_forbidden:
         raise SystemExit("HTML contains weekly-only sections: " + ", ".join(present_forbidden))
-    if "data:image" in html.lower() or "cid:" in html.lower():
-        raise SystemExit("HTML must use Gmail-safe native tables/bars, not embedded/inline images")
+    if "data:image" in html.lower():
+        raise SystemExit("HTML must not embed data:image URLs")
+    attachments = build_inline_attachments(report_dir, args.target_date, html)
 
     payload = {
         "confirm_write": True,
@@ -91,12 +115,15 @@ def main() -> int:
         "draft_subject": subject,
         "body_html": html,
     }
+    if attachments:
+        payload["attachments"] = attachments
     if args.dry_run:
         print(json.dumps({
             "status": "dry_run_pass",
             "subject": subject,
             "recipient_count": len(recipients),
             "html": str(html_path),
+            "inline_attachment_count": len(attachments),
             "verification": str(verification_path),
             "existing_draft_id": (existing_draft_status or {}).get("draft_id"),
         }, indent=2))
