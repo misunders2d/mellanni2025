@@ -2,6 +2,7 @@
 """Regression tests for required daily-report deal-calendar evidence."""
 from __future__ import annotations
 
+import csv
 import importlib.util
 import json
 import sys
@@ -41,6 +42,23 @@ class DealCalendarGateTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp.cleanup()
+
+    def test_orders_reject_both_canceled_spellings(self) -> None:
+        path = Path(self.temp.name) / "orders.csv"
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["date_pt", "order-status", "sales-channel", "currency", "quantity", "item-price", "asin", "amazon-order-id"])
+            writer.writerows([
+                ["2026-08-20", "Canceled", "Amazon.com", "USD", 1, 10, "A", "1"],
+                ["2026-08-20", "Cancelled", "Amazon.com", "USD", 1, 20, "A", "2"],
+                ["2026-08-20", "Shipped", "Amazon.com", "USD", 1, 5, "A", "3"],
+            ])
+        checks = []
+        dictionary = REPORT.pd.DataFrame([{"asin": "A", "collection": "Test"}])
+        _, summary = REPORT.normalize_orders(path, "2026-08-20", dictionary, checks, "target")
+        self.assertEqual(summary["sales"], 5.0)
+        self.assertEqual(summary["units"], 1)
+        self.assertEqual(summary["orders"], 1)
 
     def test_classifies_none_lightning_and_best_deal(self) -> None:
         path = self.write_evidence({

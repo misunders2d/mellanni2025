@@ -26,7 +26,7 @@ def build_inline_attachments(report_dir: Path, target_date: str, html: str) -> l
     if not cid_count:
         if "cid:" in html.lower():
             raise SystemExit("HTML contains an unapproved inline image CID")
-        return []
+        raise SystemExit("Daily sales report is missing the mandatory hourly chart CID")
     if cid_count != 1 or html.lower().count("cid:") != 1:
         raise SystemExit("HTML must contain exactly one approved hourly-chart CID")
     chart_path = report_dir / f"hourly_sales_{target_date}.png"
@@ -95,6 +95,7 @@ def main() -> int:
         "Mellanni Daily Sales Report",
         "Prepared by Sergey's AI helper.",
         "Executive snapshot",
+        "Hourly sales by Pacific hour",
         "Deal calendar check",
         "Collection breakdown",
     ]

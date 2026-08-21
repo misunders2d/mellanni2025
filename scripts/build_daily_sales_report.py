@@ -117,7 +117,7 @@ def normalize_orders(path: Path | None, target_date: str, dictionary: pd.DataFra
         df = df[df["currency"].eq("USD")]
     status_col = "order-status" if "order-status" in df.columns else "order_status" if "order_status" in df.columns else None
     if status_col:
-        df = df[~df[status_col].eq("Cancelled")]
+        df = df[~df[status_col].isin({"Cancelled", "Canceled"})]
     if df.empty:
         checks.append(Check(f"{label}_orders_rows", "fail", f"no rows for {target_date}; input_rows={before}"))
         return df, {"date_pt": target_date, "sales": 0.0, "units": 0, "orders": None, "rows": 0, "source": label}

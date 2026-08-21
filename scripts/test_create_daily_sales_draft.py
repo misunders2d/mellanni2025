@@ -17,6 +17,11 @@ SPEC.loader.exec_module(DRAFT)
 
 
 class InlineChartTest(unittest.TestCase):
+    def test_rejects_daily_report_without_hourly_chart(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaisesRegex(SystemExit, "missing the mandatory hourly chart CID"):
+                DRAFT.build_inline_attachments(Path(temp), "2026-08-17", "<p>No chart</p>")
+
     def test_builds_one_related_inline_attachment_for_hourly_chart(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             report_dir = Path(temp)
