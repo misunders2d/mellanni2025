@@ -398,17 +398,16 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
         ("PPC Spend", fmt_money(cur_spend, 0), f"{delta_money(spend_delta)} vs {prior_date} ({spend_pct * 100:+.1f}%)", color(spend_delta, lower_good=True)),
         ("TACOS", fmt_pct(cur_tacos), f"{delta_pp(tacos_delta)} vs {prior_date}", color(tacos_delta, lower_good=True)),
     ]
-    kpi_cells = [
+    kpi_html = "".join(
         f"""
-    <td style='width:50%;vertical-align:top;padding:0 6px 12px'>
+    <td style='width:25%;vertical-align:top;padding:0 8px 12px 0'>
       <div style='background:#f8fbff;border:1px solid #dbeafe;border-radius:10px;padding:14px'>
         <div style='font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#475467;font-weight:700'>{escape(label)}</div>
         <div style='font-size:24px;font-weight:800;margin:7px 0;color:#111827'>{escape(value)}</div>
         <div style='font-size:13px;color:{line_color};font-weight:700'>{escape(line)}</div>
       </div>
     </td>""" for label, value, line, line_color in kpis
-    ]
-    kpi_html = f"<tr>{''.join(kpi_cells[:2])}</tr><tr>{''.join(kpi_cells[2:])}</tr>"
+    )
     def deal_text(day: str) -> str:
         item = deals[day]
         if item["status"] == "Unverified":
@@ -432,10 +431,14 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
         pw = max(2, min(100, float(r["prior_sales"]) / max_sales * 100))
         rows.append(f"""
       <tr>
-        <td style='padding:7px;border:1px solid #e5e7eb;font-weight:700;overflow-wrap:anywhere'>{escape(str(r['collection']))}</td>
-        <td style='padding:7px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['current_sales'], 0)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['current_units'])} units</span><div style='background:#dbeafe;height:8px;border-radius:8px;overflow:hidden;margin-top:6px'><div style='width:{cw:.1f}%;background:#2563eb;height:8px'></div></div></td>
-        <td style='padding:7px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['prior_sales'], 0)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['prior_units'])} units</span><div style='background:#fee2e2;height:8px;border-radius:8px;overflow:hidden;margin-top:6px'><div style='width:{pw:.1f}%;background:#ef4444;height:8px'></div></div></td>
-        <td style='padding:7px;border:1px solid #e5e7eb;text-align:right;color:{color(d)};font-weight:700'>{delta_money(d)}<br><span style='font-size:11px'>{pct_s}</span></td>
+        <td style='padding:9px;border:1px solid #e5e7eb;font-weight:700'>{escape(str(r['collection']))}</td>
+        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['current_sales'], 0)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['current_units'])} units</span></td>
+        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['prior_sales'], 0)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['prior_units'])} units</span></td>
+        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(d)};font-weight:700'>{delta_money(d)}<br><span style='font-size:11px'>{pct_s}</span></td>
+        <td style='padding:9px;border:1px solid #e5e7eb;min-width:170px'>
+          <div style='font-size:11px;color:#667085;margin-bottom:3px'>Current</div><div style='background:#dbeafe;height:10px;border-radius:8px;overflow:hidden'><div style='width:{cw:.1f}%;background:#2563eb;height:10px'></div></div>
+          <div style='font-size:11px;color:#667085;margin:5px 0 3px'>Prior</div><div style='background:#fee2e2;height:10px;border-radius:8px;overflow:hidden'><div style='width:{pw:.1f}%;background:#ef4444;height:10px'></div></div>
+        </td>
       </tr>""")
     return f"""
 <meta charset="utf-8">
@@ -446,7 +449,7 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
   </div>
   <div style="border-left:4px solid #f97316;background:#fff7ed;padding:11px 14px;margin:0 0 20px;font-weight:700">Prepared by Sergey's AI helper.</div>
   <h2 style="font-size:20px;margin:18px 0 10px;color:#111827">Executive snapshot</h2>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:8px">{kpi_html}</table>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:8px"><tr>{kpi_html}</tr></table>
   <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:14px 0 18px;font-size:13px">
     <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Metric</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{target_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{prior_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">Change</th></tr>
     <tr><td style="padding:9px;border:1px solid #e5e7eb;font-weight:700">Sales</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_money(current['sales'], 2)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_money(prior['sales'], 2)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(sales_delta)};font-weight:700">{delta_money(sales_delta)} ({sales_pct * 100:+.1f}%)</td></tr>
@@ -460,8 +463,8 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
     {deal_rows}
   </table>
   <h2 style="font-size:20px;margin:20px 0 10px;color:#111827">Collection breakdown</h2>
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;table-layout:fixed;font-size:13px">
-    <tr style="background:#1f2937;color:#fff"><th style="width:40%;padding:7px;text-align:left;border:1px solid #1f2937">Collection</th><th style="width:18%;padding:7px;text-align:right;border:1px solid #1f2937">{target_date}</th><th style="width:18%;padding:7px;text-align:right;border:1px solid #1f2937">{prior_date}</th><th style="width:24%;padding:7px;text-align:right;border:1px solid #1f2937">Sales change</th></tr>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">
+    <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Collection</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{target_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{prior_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">Sales change</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Visual</th></tr>
     {''.join(rows)}
   </table>
   <p style="font-size:12px;color:#667085;margin-top:14px">TACOS = PPC spend ÷ total sales. Source notes are recorded in the verification JSON.</p>
