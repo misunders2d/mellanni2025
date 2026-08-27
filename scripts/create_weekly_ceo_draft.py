@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create Gmail draft for a generated weekly CEO report from full durable HTML.
+"""Create Gmail draft for a generated weekly CEO report from temporary HTML.
 
 Uses Pi's Google Workspace helper. Does not send email and does not print secrets.
 """
@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from report_storage import require_tmp_artifact_path
+
 HELPER = Path("/home/misunderstood/.pi/agent/extensions/google_workspace_sa.py")
 DEFAULT_RECIPIENTS = [
     "igor@mellanni.com",
@@ -22,12 +24,16 @@ DEFAULT_RECIPIENTS = [
 ]
 
 
+def require_tmp(path: Path) -> Path:
+    return require_tmp_artifact_path(path, label="Weekly report artifacts", error_type=SystemExit)
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--report-dir", type=Path, required=True)
     p.add_argument("--week-end", required=True)
     args = p.parse_args()
-    report_dir = args.report_dir.resolve()
+    report_dir = require_tmp(args.report_dir)
     account_path = report_dir / "source_data_kiosk_account_by_date.csv"
     if not account_path.exists():
         raise SystemExit(f"Missing mandatory account-by-date headline source: {account_path}")

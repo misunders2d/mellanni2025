@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Build Mellanni weekly CEO conversion/keyword report from durable CSV extracts.
+"""Build Mellanni weekly CEO conversion/keyword report from temporary CSV extracts.
 
-Inputs and outputs must live in a durable project report directory such as:
-  /media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/2026-06-20
-
-This script intentionally does not call BigQuery or Gmail. It formats verified CSV
-extracts into an XLSX workbook, Gmail-safe HTML body, and verification JSON.
+Inputs and outputs must live in a work directory under /tmp and remain there
+until manual deletion. This script intentionally does not call BigQuery or Gmail.
+It formats verified CSV extracts into an XLSX workbook, Gmail-safe HTML body,
+and verification JSON.
 """
 from __future__ import annotations
 
@@ -30,7 +29,8 @@ try:
 except Exception as exc:  # pragma: no cover
     raise SystemExit(f"Missing openpyxl dependency: {exc}")
 
-FORBIDDEN_OUTPUT_ROOT = Path("/home/misunderstood/temp").resolve()
+from report_storage import require_tmp_artifact_path
+
 DEFAULT_PROJECT_ROOT = Path("/media/misunderstood/DATA/projects/mellanni2025").resolve()
 
 REQUIRED_FILES = {
@@ -80,19 +80,14 @@ class Check:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--report-dir", type=Path, required=True, help="Durable directory containing input CSVs and receiving outputs.")
+    p.add_argument("--report-dir", type=Path, required=True, help="Temporary /tmp directory containing input CSVs and receiving outputs.")
     p.add_argument("--week-end", required=True, help="Saturday week-end date, YYYY-MM-DD.")
     p.add_argument("--strict", action="store_true", help="Exit non-zero on verification warnings/failures.")
     return p.parse_args()
 
 
-def fail_if_temp(path: Path) -> None:
-    resolved = path.resolve()
-    try:
-        resolved.relative_to(FORBIDDEN_OUTPUT_ROOT)
-    except ValueError:
-        return
-    raise SystemExit(f"Refusing to use temp path for useful report asset: {resolved}")
+def require_tmp(path: Path) -> Path:
+    return require_tmp_artifact_path(path, label="Weekly report artifacts", error_type=SystemExit)
 
 
 def week_dates(week_end_s: str) -> dict[str, date]:
@@ -861,8 +856,7 @@ def write_workbook(context: dict[str, Any], out: Path) -> None:
 
 def main() -> int:
     args = parse_args()
-    report_dir = args.report_dir.resolve()
-    fail_if_temp(report_dir)
+    report_dir = require_tmp(args.report_dir)
     dates = week_dates(args.week_end)
     report_dir.mkdir(parents=True, exist_ok=True)
 

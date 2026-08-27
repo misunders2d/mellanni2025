@@ -22,6 +22,12 @@ SPEC.loader.exec_module(REPORT)
 
 
 class AccountHeadlineGateTest(unittest.TestCase):
+    def test_requires_tmp_report_directory(self):
+        with self.assertRaisesRegex(SystemExit, "must stay under /tmp"):
+            REPORT.require_tmp(Path("/media/misunderstood/DATA/projects/mellanni2025/reports/weekly_conversion/test"))
+        allowed = Path("/tmp/mellanni-reports/weekly_conversion/test")
+        self.assertEqual(REPORT.require_tmp(allowed), allowed)
+
     def setUp(self) -> None:
         current_end = date(2026, 8, 8)
         current_start = current_end - timedelta(days=6)

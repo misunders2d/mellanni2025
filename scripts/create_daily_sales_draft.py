@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Create a real Gmail draft for a built Mellanni daily sales report.
 
-Reads deterministic builder outputs from a durable report directory. It never
-sends mail. Recipients come from an ignored local JSON config, not committed
+Reads deterministic builder outputs from a temporary work directory under /tmp.
+It never sends mail. Recipients come from an ignored local JSON config, not committed
 code or verification artifacts. Use --dry-run to validate without creating a
 new Gmail draft.
 """
@@ -16,9 +16,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from report_storage import require_tmp_artifact_path
+
 HELPER = Path("/home/misunderstood/.pi/agent/extensions/google_workspace_sa.py")
 DEFAULT_RECIPIENTS_CONFIG = Path("config/daily_sales_recipients.json")
 CHART_CID = "daily-hourly-sales"
+
+
+def require_tmp(path: Path) -> Path:
+    return require_tmp_artifact_path(path, label="Daily report artifacts", error_type=SystemExit)
 
 
 def build_inline_attachments(report_dir: Path, target_date: str, html: str) -> list[dict[str, Any]]:
@@ -66,7 +72,7 @@ def load_recipients(path: Path | None) -> list[str]:
 
 def main() -> int:
     args = parse_args()
-    report_dir = args.report_dir.resolve()
+    report_dir = require_tmp(args.report_dir)
     verification_path = report_dir / f"verification_{args.target_date}.json"
     draft_status_path = report_dir / f"draft_status_{args.target_date}.json"
     html_path = report_dir / f"email_body_{args.target_date}.html"

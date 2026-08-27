@@ -154,4 +154,5 @@ sales_Canada_practice.db
 restock_canada.db
 
 reports_data/
-reports/daily_sales/**/draft_status_*.json
+# Generated reports belong under /tmp and must never enter this repository.
+reports/

@@ -12,6 +12,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from report_storage import require_tmp_artifact_path
+
+
+def require_tmp(path: Path) -> Path:
+    return require_tmp_artifact_path(path, label="Weekly report artifacts", error_type=SystemExit)
+
 
 def check(checks: list[dict], name: str, ok: bool, details: str = "") -> None:
     checks.append({"name": name, "status": "pass" if ok else "fail", "details": details})
@@ -30,7 +36,7 @@ def main() -> int:
     p.add_argument("--report-dir", type=Path, required=True)
     p.add_argument("--week-end", required=True)
     args = p.parse_args()
-    base = args.report_dir.resolve()
+    base = require_tmp(args.report_dir)
     week_end = args.week_end
     checks: list[dict] = []
 

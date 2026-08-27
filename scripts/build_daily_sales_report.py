@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Build Mellanni daily sales report from durable CSV extracts.
+"""Build Mellanni daily sales report from temporary CSV extracts.
 
 This script is deterministic: it does not call SP-API, BigQuery, Google Sheets,
-or Gmail. First place source extracts in the report directory, then run this
-builder to produce the HTML body, subject, comparison CSV, and verification JSON.
+or Gmail. First place source extracts in a work directory under /tmp, then run
+this builder to produce the HTML body, subject, comparison CSV, and verification JSON.
 
 Default input filenames in --report-dir:
   all_orders_us_filtered_sanitized.csv       target SP-API all-orders rows
@@ -11,7 +11,7 @@ Default input filenames in --report-dir:
   bigquery_collection_breakdown_current_prior.csv  optional prior fallback rows
   ppc_hourly_current_prior.csv               hourly Sheet rows for target/prior
 
-Useful output assets stay in the same durable report directory.
+Outputs stay in the same /tmp work directory until manual deletion.
 """
 from __future__ import annotations
 
@@ -27,7 +27,8 @@ from typing import Any
 
 import pandas as pd
 
-FORBIDDEN_OUTPUT_ROOT = Path("/home/misunderstood/temp").resolve()
+from report_storage import require_tmp_artifact_path
+
 DEFAULT_COMPETITOR_CONFIG = Path(__file__).parents[1] / "report_configs/daily_sales_competitors.json"
 REQUIRED_COMPETITOR_BRANDS = {"Amazon Basics", "Utopia Bedding", "CGK Unlimited"}
 COMPETITOR_MAX_AGE_MINUTES = 60
@@ -59,13 +60,8 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def fail_if_temp(path: Path) -> None:
-    resolved = path.resolve()
-    try:
-        resolved.relative_to(FORBIDDEN_OUTPUT_ROOT)
-    except ValueError:
-        return
-    raise SystemExit(f"Refusing to write useful report asset under temp: {resolved}")
+def require_tmp(path: Path) -> Path:
+    return require_tmp_artifact_path(path, label="Daily report artifacts", error_type=SystemExit)
 
 
 def resolve_default(report_dir: Path, explicit: Path | None, names: list[str]) -> Path | None:
@@ -581,8 +577,7 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
 
 def main() -> int:
     args = parse_args()
-    report_dir = args.report_dir.resolve()
-    fail_if_temp(report_dir)
+    report_dir = require_tmp(args.report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
     target_date = args.target_date
     prior_date = args.prior_date or (datetime.strptime(target_date, "%Y-%m-%d").date() - timedelta(days=7)).isoformat()

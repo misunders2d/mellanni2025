@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from report_storage import require_tmp_artifact_path
+
 DEFAULT_CONFIG = Path(__file__).parents[1] / "report_configs/daily_sales_competitors.json"
 DEFAULT_CACHE = Path("/home/misunderstood/.pi/agent/keepa-cache")
 REQUIRED_BRANDS = {"Amazon Basics", "Utopia Bedding", "CGK Unlimited"}
@@ -26,6 +28,10 @@ CSV_MAP = {
     "buy_box": (18, 3),
     "prime_exclusive": (33, 2),
 }
+
+
+def require_tmp(path: Path) -> Path:
+    return require_tmp_artifact_path(path, label="Daily report artifacts", error_type=SystemExit)
 
 
 def parse_args() -> argparse.Namespace:
@@ -159,9 +165,10 @@ def build_snapshot(config: dict[str, Any], cache_dir: Path, max_age_minutes: int
 def main() -> int:
     args = parse_args()
     snapshot = build_snapshot(json.loads(args.config.read_text(encoding="utf-8")), args.cache_dir, args.max_age_minutes)
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
-    print(json.dumps({"status": "pass", "products": len(snapshot["products"]), "output": str(args.output)}))
+    output = require_tmp(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(snapshot, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps({"status": "pass", "products": len(snapshot["products"]), "output": str(output)}))
     return 0
 
 

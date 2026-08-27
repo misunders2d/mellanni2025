@@ -17,6 +17,12 @@ SPEC.loader.exec_module(DRAFT)
 
 
 class InlineChartTest(unittest.TestCase):
+    def test_requires_tmp_report_directory(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "must stay under /tmp"):
+            DRAFT.require_tmp(Path("/media/misunderstood/DATA/projects/mellanni2025/reports/daily_sales/test"))
+        allowed = Path("/tmp/mellanni-reports/daily_sales/test")
+        self.assertEqual(DRAFT.require_tmp(allowed), allowed)
+
     def test_rejects_daily_report_without_hourly_chart(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             with self.assertRaisesRegex(SystemExit, "missing the mandatory hourly chart CID"):

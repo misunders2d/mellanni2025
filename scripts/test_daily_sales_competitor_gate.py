@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import time
@@ -27,6 +28,17 @@ REPORT = load_module("build_daily_sales_report_competitor_test", ROOT / "build_d
 
 
 class DailyCompetitorGateTest(unittest.TestCase):
+    def test_requires_tmp_artifact_paths(self) -> None:
+        blocked = Path("/media/misunderstood/DATA/projects/mellanni2025/reports/daily_sales/test.json")
+        with self.assertRaisesRegex(SystemExit, "must stay under /tmp"):
+            PREP.require_tmp(blocked)
+        with self.assertRaisesRegex(SystemExit, "must stay under /tmp"):
+            REPORT.require_tmp(blocked.parent)
+        with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            with self.assertRaisesRegex(SystemExit, "git worktree"):
+                PREP.require_tmp(Path(tmp) / "competitor.json")
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
