@@ -1,0 +1,20 @@
+{
+  "marketplace": "Amazon.com",
+  "products": [
+    {
+      "brand": "Amazon Basics",
+      "asin": "B00Q7OARO2",
+      "label": "Queen 4-piece microfiber sheet set, Dark Gray"
+    },
+    {
+      "brand": "Utopia Bedding",
+      "asin": "B00NX0WXQI",
+      "label": "Queen 4-piece 16-inch deep-pocket sheet set, Grey"
+    },
+    {
+      "brand": "CGK Unlimited",
+      "asin": "B01M16WBW1",
+      "label": "Queen 4-piece cooling sheet set, White"
+    }
+  ]
+}

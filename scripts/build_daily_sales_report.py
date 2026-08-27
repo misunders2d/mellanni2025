@@ -28,6 +28,9 @@ from typing import Any
 import pandas as pd
 
 FORBIDDEN_OUTPUT_ROOT = Path("/home/misunderstood/temp").resolve()
+DEFAULT_COMPETITOR_CONFIG = Path(__file__).parents[1] / "report_configs/daily_sales_competitors.json"
+REQUIRED_COMPETITOR_BRANDS = {"Amazon Basics", "Utopia Bedding", "CGK Unlimited"}
+COMPETITOR_MAX_AGE_MINUTES = 60
 
 
 @dataclass
@@ -48,6 +51,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--dictionary", type=Path, help="Full dictionary CSV with asin, collection")
     p.add_argument("--spend-hourly", type=Path, help="Raw hourly Sheet CSV with date_pt, hour_pt, spend")
     p.add_argument("--deal-calendar", type=Path, help="Google Calendar deal-event JSON; default deal_calendar_status.json")
+    p.add_argument("--competitor-check", type=Path, help="Current Keepa competitor snapshot; default competitor_check.json")
+    p.add_argument("--competitor-config", type=Path, default=DEFAULT_COMPETITOR_CONFIG, help="Configured representative competitor ASINs")
     p.add_argument("--order-summary", type=Path, help="Optional exact order summary CSV with date_pt,sales,units,orders,rows")
     p.add_argument("--sales-api-control", type=Path, help="Optional SP-API Sales API control CSV with date_pt,sales,units,orders")
     p.add_argument("--strict", action="store_true", help="Exit non-zero unless verification status is pass")
@@ -343,6 +348,81 @@ def read_deal_calendar(path: Path | None, dates: list[str], checks: list[Check])
     return out
 
 
+def read_competitor_check(
+    path: Path | None,
+    config_path: Path | None,
+    checks: list[Check],
+    *,
+    now_utc: pd.Timestamp | None = None,
+) -> list[dict[str, Any]]:
+    if not path or not path.is_file():
+        checks.append(Check("competitor_check", "fail", "missing competitor_check.json"))
+        return []
+    if not config_path or not config_path.is_file():
+        checks.append(Check("competitor_check", "fail", "missing competitor configuration"))
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        checks.append(Check("competitor_check", "fail", f"invalid JSON: {exc}"))
+        return []
+
+    products = data.get("products") if isinstance(data.get("products"), list) else []
+    configured = config.get("products") if isinstance(config.get("products"), list) else []
+    expected_pairs = {
+        (str(item.get("brand") or "").strip(), str(item.get("asin") or "").strip().upper())
+        for item in configured
+    }
+    actual_pairs = {
+        (str(item.get("brand") or "").strip(), str(item.get("asin") or "").strip().upper())
+        for item in products
+    }
+    expected_brands = {brand for brand, _ in expected_pairs}
+    missing_brands = REQUIRED_COMPETITOR_BRANDS - expected_brands
+    now = now_utc if now_utc is not None else pd.Timestamp.now(tz="UTC")
+    if now.tzinfo is None:
+        now = now.tz_localize("UTC")
+    else:
+        now = now.tz_convert("UTC")
+    ages: list[float] = []
+    valid = (
+        data.get("status") == "pass"
+        and data.get("marketplace") == "Amazon.com"
+        and bool(expected_pairs)
+        and not missing_brands
+        and actual_pairs == expected_pairs
+        and len(products) == len(actual_pairs)
+    )
+    for item in products:
+        price = item.get("current_price")
+        deals = item.get("deals")
+        duration_status = item.get("duration_status")
+        valid = valid and isinstance(price, (int, float)) and price > 0
+        valid = valid and isinstance(deals, list)
+        valid = valid and duration_status in {"not_applicable", "not_exposed_by_keepa", "end_only", "complete"}
+        valid = valid and item.get("source") == "Keepa product cache"
+        try:
+            checked = pd.Timestamp(item["checked_at_utc"])
+            if checked.tzinfo is None:
+                raise ValueError("timezone missing")
+            age_minutes = (now - checked.tz_convert("UTC")).total_seconds() / 60
+            ages.append(age_minutes)
+            valid = valid and 0 <= age_minutes <= COMPETITOR_MAX_AGE_MINUTES
+        except Exception:
+            valid = False
+    missing_pairs = sorted(expected_pairs - actual_pairs)
+    extra_pairs = sorted(actual_pairs - expected_pairs)
+    max_age = max(ages) if ages else float("inf")
+    details = (
+        f"products={len(products)}, configured={len(expected_pairs)}, "
+        f"missing_brands={sorted(missing_brands)}, missing_pairs={missing_pairs}, "
+        f"extra_pairs={extra_pairs}, max_age_minutes={max_age:.1f}"
+    )
+    checks.append(Check("competitor_check", "pass" if valid else "fail", details))
+    return products if valid else []
+
+
 def fmt_money(v: float, digits: int = 0) -> str:
     return f"${float(v):,.{digits}f}"
 
@@ -380,7 +460,7 @@ def pct_delta(current: float, prior: float) -> float | None:
     return current / prior - 1
 
 
-def render_html(target_date: str, prior_date: str, current: dict[str, Any], prior: dict[str, Any], spend: dict[str, dict[str, Any]], deals: dict[str, dict[str, Any]], comp: pd.DataFrame) -> str:
+def render_html(target_date: str, prior_date: str, current: dict[str, Any], prior: dict[str, Any], spend: dict[str, dict[str, Any]], deals: dict[str, dict[str, Any]], competitors: list[dict[str, Any]], comp: pd.DataFrame) -> str:
     cur_spend = spend[target_date]["spend"]
     pri_spend = spend[prior_date]["spend"]
     cur_tacos = cur_spend / current["sales"]
@@ -420,6 +500,27 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
         f"<tr><td style='padding:9px;border:1px solid #e5e7eb;font-weight:700'>{day}</td><td style='padding:9px;border:1px solid #e5e7eb'>{escape(deal_text(day))}</td></tr>"
         for day in [target_date, prior_date]
     )
+    competitor_rows = []
+    for item in competitors:
+        deal_badges = ", ".join(str(deal.get("badge") or deal.get("type")) for deal in item["deals"]) or "None"
+        if item["duration_status"] == "not_applicable":
+            duration = "n/a"
+        elif item["duration_status"] == "not_exposed_by_keepa":
+            duration = "Not exposed by Keepa"
+        elif item["duration_status"] == "end_only":
+            duration = f"Ends {item.get('deal_end')}; start unavailable"
+        else:
+            duration = f"{item.get('duration_hours')} hours"
+        source_label = str(item["current_price_source"]).replace("_", " ").title()
+        competitor_rows.append(f"""
+      <tr>
+        <td style='padding:9px;border:1px solid #e5e7eb;font-weight:700'>{escape(str(item['brand']))}<br><span style='font-size:11px;color:#667085'>{escape(str(item['asin']))}</span></td>
+        <td style='padding:9px;border:1px solid #e5e7eb'>{escape(str(item['label']))}</td>
+        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right;font-weight:700'>{fmt_money(item['current_price'], 2)}<br><span style='font-size:11px;color:#667085'>{escape(source_label)}</span></td>
+        <td style='padding:9px;border:1px solid #e5e7eb'>{escape(deal_badges)}</td>
+        <td style='padding:9px;border:1px solid #e5e7eb;text-align:center'>{'Yes' if item['best_or_lightning_deal'] else 'No'}</td>
+        <td style='padding:9px;border:1px solid #e5e7eb'>{escape(duration)}</td>
+      </tr>""")
     render = comp.sort_values(["current_sales", "prior_sales"], ascending=[False, False]).head(12)
     max_sales = max(float(render["current_sales"].max() or 0), float(render["prior_sales"].max() or 0), 1.0)
     rows = []
@@ -462,6 +563,12 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
     <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Pacific date</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Lightning / Best Deal</th></tr>
     {deal_rows}
   </table>
+  <h2 style="font-size:20px;margin:20px 0 10px;color:#111827">Competitor price and deal check</h2>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:18px;font-size:13px">
+    <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Brand / ASIN</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Representative product</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">Current price</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Active deal badge</th><th style="padding:9px;text-align:center;border:1px solid #1f2937">Best / Lightning</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Duration</th></tr>
+    {''.join(competitor_rows)}
+  </table>
+  <p style="font-size:11px;color:#64748b;margin:-10px 0 18px">Current consumer price and deal badge from fresh Keepa evidence. Keepa does not always expose deal start/end times; unavailable duration is stated rather than inferred.</p>
   <h2 style="font-size:20px;margin:20px 0 10px;color:#111827">Collection breakdown</h2>
   <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">
     <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Collection</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{target_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{prior_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">Sales change</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Visual</th></tr>
@@ -507,6 +614,8 @@ def main() -> int:
     spend = read_spend(spend_path, [target_date, prior_date], checks)
     deal_path = resolve_default(report_dir, args.deal_calendar, ["deal_calendar_status.json"])
     deals = read_deal_calendar(deal_path, [target_date, prior_date], checks)
+    competitor_path = resolve_default(report_dir, args.competitor_check, ["competitor_check.json"])
+    competitors = read_competitor_check(competitor_path, args.competitor_config, checks)
 
     if current_summary["sales"] <= 0:
         checks.append(Check("target_sales_nonzero", "fail", "target sales are zero; TACOS undefined"))
@@ -534,7 +643,7 @@ def main() -> int:
     comp.to_csv(comp_path, index=False)
 
     subject = f"{target_date} results: {fmt_int(current_summary['units'])} units, {fmt_money(current_summary['sales'], 0)} sales, PPC Spend = {fmt_money(spend[target_date]['spend'], 0)} with {fmt_pct(spend[target_date]['spend'] / current_summary['sales'])} TACOS"
-    html_body = render_html(target_date, prior_date, current_summary, prior_summary, spend, deals, comp)
+    html_body = render_html(target_date, prior_date, current_summary, prior_summary, spend, deals, competitors, comp)
     html_path = report_dir / f"email_body_{target_date}.html"
     subject_path = report_dir / f"email_subject_{target_date}.txt"
     verification_path = report_dir / f"verification_{target_date}.json"
@@ -553,6 +662,7 @@ def main() -> int:
         "current": current_summary | {"ppc_spend": spend[target_date]["spend"], "spend_hours": spend[target_date]["hours"], "tacos": spend[target_date]["spend"] / current_summary["sales"] if current_summary["sales"] else None},
         "prior": prior_summary | {"ppc_spend": spend[prior_date]["spend"], "spend_hours": spend[prior_date]["hours"], "tacos": spend[prior_date]["spend"] / prior_summary["sales"] if prior_summary["sales"] else None},
         "deals": deals,
+        "competitors": competitors,
         "checks": [asdict(c) for c in checks],
         "outputs": {"html": rel(html_path), "subject": rel(subject_path), "comparison": rel(comp_path), "verification": rel(verification_path)},
         "draft_created": False,

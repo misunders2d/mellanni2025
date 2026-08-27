@@ -97,6 +97,7 @@ def main() -> int:
         "Executive snapshot",
         "Hourly sales by Pacific hour",
         "Deal calendar check",
+        "Competitor price and deal check",
         "Collection breakdown",
     ]
     missing = [needle for needle in required if needle not in html]
