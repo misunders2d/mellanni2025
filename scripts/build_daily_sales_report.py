@@ -517,7 +517,7 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
         <td style='padding:9px;border:1px solid #e5e7eb;text-align:center'>{'Yes' if item['best_or_lightning_deal'] else 'No'}</td>
         <td style='padding:9px;border:1px solid #e5e7eb'>{escape(duration)}</td>
       </tr>""")
-    render = comp.sort_values(["current_sales", "prior_sales"], ascending=[False, False]).head(12)
+    render = comp.sort_values(["current_sales", "prior_sales"], ascending=[False, False])
     max_sales = max(float(render["current_sales"].max() or 0), float(render["prior_sales"].max() or 0), 1.0)
     rows = []
     for _, r in render.iterrows():
@@ -529,9 +529,9 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
         rows.append(f"""
       <tr>
         <td style='padding:9px;border:1px solid #e5e7eb;font-weight:700'>{escape(str(r['collection']))}</td>
-        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['current_sales'], 0)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['current_units'])} units</span></td>
-        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['prior_sales'], 0)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['prior_units'])} units</span></td>
-        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(d)};font-weight:700'>{delta_money(d)}<br><span style='font-size:11px'>{pct_s}</span></td>
+        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['current_sales'], 2)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['current_units'])} units</span></td>
+        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['prior_sales'], 2)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['prior_units'])} units</span></td>
+        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(d)};font-weight:700'>{('+' if d >= 0 else '-') + fmt_money(abs(d), 2)}<br><span style='font-size:11px'>{pct_s}</span></td>
         <td style='padding:9px;border:1px solid #e5e7eb;min-width:170px'>
           <div style='font-size:11px;color:#667085;margin-bottom:3px'>Current</div><div style='background:#dbeafe;height:10px;border-radius:8px;overflow:hidden'><div style='width:{cw:.1f}%;background:#2563eb;height:10px'></div></div>
           <div style='font-size:11px;color:#667085;margin:5px 0 3px'>Prior</div><div style='background:#fee2e2;height:10px;border-radius:8px;overflow:hidden'><div style='width:{pw:.1f}%;background:#ef4444;height:10px'></div></div>
