@@ -21,6 +21,7 @@ import math
 import sys
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from html import escape
 from pathlib import Path
 from typing import Any
@@ -102,11 +103,83 @@ def add_date_pt(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def promotion_summary(df: pd.DataFrame, checks: list[Check], label: str) -> dict[str, Any]:
+    """Exclusive order-line promo groups; never allocate stacked sales to each ID."""
+    aliases = {
+        "ids": ("promotion-ids", "promotion_ids"),
+        "item_discount": ("item-promotion-discount", "item_promotion_discount"),
+        "shipping_discount": ("ship-promotion-discount", "ship_promotion_discount"),
+        "sales": ("item-price", "item_price"),
+        "order": ("amazon-order-id", "amazon_order_id"),
+        "units": ("quantity",),
+    }
+    columns = {key: next((col for col in options if col in df.columns), None) for key, options in aliases.items()}
+    missing = [key for key, col in columns.items() if col is None]
+    if missing or df.empty:
+        checks.append(Check(f"{label}_promotion_source", "fail", "missing promotion fields/rows: " + ", ".join(missing)))
+        return {"status": "fail", "groups": [], "totals": {}}
+
+    def money(value: Any) -> Decimal:
+        # Blank Amazon discount values mean zero, not missing columns.
+        text = "" if pd.isna(value) else str(value).strip()
+        result = Decimal(text or "0")
+        if not result.is_finite() or result < 0:
+            raise ValueError("invalid monetary value")
+        return result
+
+    groups: dict[tuple[str, ...], dict[str, Any]] = {}
+    all_orders: set[str] = set()
+    try:
+        for row in df.to_dict("records"):
+            text = "" if pd.isna(row[columns["ids"]]) else str(row[columns["ids"]]).strip()
+            ids = tuple(sorted({part.strip() for part in text.split(",") if part.strip().lower() not in {"", "nan", "null", "none"}}))
+            sales = money(row[columns["sales"]])
+            item_discount = money(row[columns["item_discount"]])
+            shipping_discount = money(row[columns["shipping_discount"]])
+            units_decimal = money(row[columns["units"]])
+            if units_decimal != units_decimal.to_integral_value():
+                raise ValueError("quantity must be integral")
+            order = str(row[columns["order"]]).strip()
+            if not order or order.lower() in {"nan", "null", "none"}:
+                raise ValueError("missing order ID")
+            category = "identified" if ids else "unidentified" if item_discount or shipping_discount else "no_recorded_promotion"
+            key = (category, *ids)
+            if key not in groups:
+                groups[key] = {
+                    "category": category, "promotion_ids": list(ids),
+                    "label": " + ".join(ids) + (" (stacked IDs)" if len(ids) > 1 else "") if ids else "Unidentified promotion" if category == "unidentified" else "No recorded promotion",
+                    "sales": Decimal(0), "item_discount": Decimal(0), "shipping_discount": Decimal(0),
+                    "net_sales": Decimal(0), "units": 0, "rows": 0, "order_ids": set(),
+                }
+            group = groups[key]
+            for metric, value in (("sales", sales), ("item_discount", item_discount), ("shipping_discount", shipping_discount), ("net_sales", sales - item_discount)):
+                group[metric] += value
+            group["units"] += int(units_decimal)
+            group["rows"] += 1
+            group["order_ids"].add(order)
+            all_orders.add(order)
+    except (ValueError, InvalidOperation) as exc:
+        checks.append(Check(f"{label}_promotion_source", "fail", f"invalid promotion numeric/order evidence: {exc}"))
+        return {"status": "fail", "groups": [], "totals": {}}
+    monetary = ("sales", "item_discount", "shipping_discount", "net_sales")
+    totals = {metric: float(round(sum(group[metric] for group in groups.values()), 2)) for metric in monetary}
+    totals.update(units=sum(group["units"] for group in groups.values()), rows=len(df), orders=len(all_orders))
+    output = []
+    for group in groups.values():
+        group["orders"] = len(group.pop("order_ids"))
+        for metric in monetary:
+            group[metric] = float(round(group[metric], 2))
+        output.append(group)
+    output.sort(key=lambda group: (group["category"] != "identified", -group["sales"], group["label"]))
+    checks.append(Check(f"{label}_promotion_source", "pass", f"rows={len(df)}, exclusive_groups={len(output)}"))
+    return {"status": "pass", "groups": output, "totals": totals}
+
+
 def normalize_orders(path: Path | None, target_date: str, dictionary: pd.DataFrame, checks: list[Check], label: str) -> tuple[pd.DataFrame, dict[str, Any]]:
     if not path or not path.exists():
         checks.append(Check(f"{label}_orders_file", "fail", "missing"))
         return pd.DataFrame(), {"date_pt": target_date, "sales": 0.0, "units": 0, "orders": None, "rows": 0, "source": label}
-    df = pd.read_csv(path, dtype=str)
+    df = pd.read_csv(path, dtype=str, keep_default_na=False)
     df = add_date_pt(df)
     before = len(df)
     df = df[df["date_pt"].eq(target_date)].copy()
@@ -127,6 +200,7 @@ def normalize_orders(path: Path | None, target_date: str, dictionary: pd.DataFra
     if qty_col not in df.columns or price_col not in df.columns:
         checks.append(Check(f"{label}_orders_columns", "fail", "missing quantity or item-price/item_price"))
         return pd.DataFrame(), {"date_pt": target_date, "sales": 0.0, "units": 0, "orders": None, "rows": 0, "source": label}
+    promos = promotion_summary(df, checks, label)
     df["quantity"] = pd.to_numeric(df[qty_col], errors="coerce").fillna(0)
     df["item_price"] = pd.to_numeric(df[price_col], errors="coerce").fillna(0.0)
     if "collection" not in df.columns:
@@ -153,6 +227,7 @@ def normalize_orders(path: Path | None, target_date: str, dictionary: pd.DataFra
         "orders": orders,
         "rows": int(len(df)),
         "source": label,
+        "promotions": promos,
     }
     checks.append(Check(f"{label}_orders_rows", "pass", f"rows={len(df)}, source_rows={before}"))
     return group, summary
@@ -456,7 +531,40 @@ def pct_delta(current: float, prior: float) -> float | None:
     return current / prior - 1
 
 
-def render_html(target_date: str, prior_date: str, current: dict[str, Any], prior: dict[str, Any], spend: dict[str, dict[str, Any]], deals: dict[str, dict[str, Any]], competitors: list[dict[str, Any]], comp: pd.DataFrame) -> str:
+def render_promotions(target_date: str, prior_date: str, promotions: dict[str, dict[str, Any]]) -> str:
+    sections = ["<h2 style='font-size:20px;margin:20px 0 10px;color:#111827'>Promotion-associated sales</h2>"]
+    sections.append("<p style='font-size:12px;color:#667085'>Ranked by gross sales on tagged items, not entire order baskets. These are associated sales, not incremental lift or proof that a promotion caused purchases. Stacked IDs stay together; no sales are counted twice.</p>")
+    for day in (target_date, prior_date):
+        item = promotions.get(day, {})
+        if item.get("status") != "pass":
+            sections.append(f"<p>{escape(day)}: promotion evidence unverified — report blocked.</p>")
+            continue
+        groups = item["groups"]
+        identified = [group for group in groups if group["category"] == "identified"]
+        controls = [group for group in groups if group["category"] != "identified"]
+        totals = item["totals"]
+        sections.append(f"<h3 style='font-size:15px;margin:16px 0 8px'>{escape(day)} PT</h3>")
+        if not identified:
+            sections.append("<p style='font-size:12px'>No identified promotion ranking available; discounted items with blank IDs remain unidentified.</p>")
+        elif len(identified) > 10:
+            sections.append(f"<p style='font-size:12px;color:#667085'>Top 10 of {len(identified)} identified promotion groups. Remaining groups are combined below.</p>")
+        displayed = identified[:10]
+        if len(identified) > 10:
+            remaining = identified[10:]
+            displayed.append({"label": f"Other {len(remaining)} identified groups", **{metric: sum(group[metric] for group in remaining) for metric in ("sales", "item_discount", "net_sales", "shipping_discount")}})
+        displayed += controls
+        displayed.append({"label": "All items — reconciliation total", **totals})
+        rows = []
+        for number, group in enumerate(displayed):
+            rank = f"#{number + 1} · " if number < min(10, len(identified)) else ""
+            name = escape(rank + group["label"])
+            rows.append(f"<tr><td style='padding:9px;border:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word'>{name}</td>" + "".join(f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right;white-space:nowrap'>{fmt_money(group[metric], 2)}</td>" for metric in ("sales", "item_discount", "net_sales", "shipping_discount")) + "</tr>")
+        sections.append("<table width='100%' cellpadding='0' cellspacing='0' style='table-layout:fixed;border-collapse:collapse;font-size:12px'><colgroup><col style='width:40%'><col style='width:15%'><col style='width:15%'><col style='width:15%'><col style='width:15%'></colgroup><tr style='background:#1f2937;color:#fff'>" + "".join(f"<th style='padding:9px;text-align:left;border:1px solid #1f2937'>{heading}</th>" for heading in ("Promotion / control", "Gross item sales", "Item discounts", "Net item sales", "Shipping discounts")) + "</tr>" + "".join(rows) + "</table>")
+    sections.append("<p style='font-size:11px;color:#667085'>Net item sales deduct item discounts only. Shipping discounts are separate. Unknown IDs are not assumed Lightning Deals. Distinct orders across promo groups are not additive.</p>")
+    return "\n".join(sections)
+
+
+def render_html(target_date: str, prior_date: str, current: dict[str, Any], prior: dict[str, Any], spend: dict[str, dict[str, Any]], deals: dict[str, dict[str, Any]], competitors: list[dict[str, Any]], comp: pd.DataFrame, promotions: dict[str, dict[str, Any]]) -> str:
     cur_spend = spend[target_date]["spend"]
     pri_spend = spend[prior_date]["spend"]
     cur_tacos = cur_spend / current["sales"]
@@ -565,6 +673,7 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
     {''.join(competitor_rows)}
   </table>
   <p style="font-size:11px;color:#64748b;margin:-10px 0 18px">Current consumer price and deal badge from fresh Keepa evidence. Keepa does not always expose deal start/end times; unavailable duration is stated rather than inferred.</p>
+  {render_promotions(target_date, prior_date, promotions)}
   <h2 style="font-size:20px;margin:20px 0 10px;color:#111827">Collection breakdown</h2>
   <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">
     <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Collection</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{target_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{prior_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">Sales change</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Visual</th></tr>
@@ -605,6 +714,28 @@ def main() -> int:
     control_path = resolve_default(report_dir, args.sales_api_control, ["spapi_sales_api_control.csv"])
     prior_summary = verify_sales_api_control(prior_summary, control_path, checks, "prior")
 
+    promotions = {
+        target_date: current_summary.pop("promotions", {"status": "fail", "groups": [], "totals": {}}),
+        prior_date: prior_summary.pop("promotions", {"status": "fail", "groups": [], "totals": {}}),
+    }
+    for day, summary in ((target_date, current_summary), (prior_date, prior_summary)):
+        promo = promotions[day]
+        totals = promo["totals"]
+        reconciled = promo["status"] == "pass" and all(
+            abs(totals.get(metric, float("inf")) - summary[metric]) < 0.01
+            for metric in ("sales", "units", "rows")
+        )
+        if promo["status"] == "pass":
+            reconciled = reconciled and all(
+                abs(sum(group[metric] for group in promo["groups"]) - totals[metric]) < 0.01
+                for metric in ("sales", "item_discount", "shipping_discount", "net_sales", "units", "rows")
+            )
+        checks.append(Check(f"promotion_reconciliation:{day}", "pass" if reconciled else "fail", "exclusive groups vs selected source totals; order-line promotion evidence required"))
+        if not reconciled:
+            promo["status"] = "fail"
+    promo_path = report_dir / "promotion_sales.csv"
+    pd.DataFrame([{**group, "date_pt": day, "promotion_ids": json.dumps(group["promotion_ids"])} for day, promo in promotions.items() for group in promo["groups"]]).to_csv(promo_path, index=False)
+
     spend_path = resolve_default(report_dir, args.spend_hourly, ["ppc_hourly_current_prior.csv"])
     spend = read_spend(spend_path, [target_date, prior_date], checks)
     deal_path = resolve_default(report_dir, args.deal_calendar, ["deal_calendar_status.json"])
@@ -638,7 +769,7 @@ def main() -> int:
     comp.to_csv(comp_path, index=False)
 
     subject = f"{target_date} results: {fmt_int(current_summary['units'])} units, {fmt_money(current_summary['sales'], 0)} sales, PPC Spend = {fmt_money(spend[target_date]['spend'], 0)} with {fmt_pct(spend[target_date]['spend'] / current_summary['sales'])} TACOS"
-    html_body = render_html(target_date, prior_date, current_summary, prior_summary, spend, deals, competitors, comp)
+    html_body = render_html(target_date, prior_date, current_summary, prior_summary, spend, deals, competitors, comp, promotions)
     html_path = report_dir / f"email_body_{target_date}.html"
     subject_path = report_dir / f"email_subject_{target_date}.txt"
     verification_path = report_dir / f"verification_{target_date}.json"
@@ -658,8 +789,9 @@ def main() -> int:
         "prior": prior_summary | {"ppc_spend": spend[prior_date]["spend"], "spend_hours": spend[prior_date]["hours"], "tacos": spend[prior_date]["spend"] / prior_summary["sales"] if prior_summary["sales"] else None},
         "deals": deals,
         "competitors": competitors,
+        "promotions": promotions,
         "checks": [asdict(c) for c in checks],
-        "outputs": {"html": rel(html_path), "subject": rel(subject_path), "comparison": rel(comp_path), "verification": rel(verification_path)},
+        "outputs": {"html": rel(html_path), "subject": rel(subject_path), "comparison": rel(comp_path), "promotions": rel(promo_path), "verification": rel(verification_path)},
         "draft_created": False,
         "email_sent": False,
     }

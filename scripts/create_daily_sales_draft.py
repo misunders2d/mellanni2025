@@ -49,6 +49,13 @@ def build_inline_attachments(report_dir: Path, target_date: str, html: str) -> l
 
 
 
+def validate_promotions(verification: dict[str, Any]) -> None:
+    for day in (verification.get("target_date_pt"), verification.get("prior_date_pt")):
+        promo = verification.get("promotions", {}).get(day, {})
+        if not day or promo.get("status") != "pass" or not promo.get("groups"):
+            raise SystemExit("Daily report missing verified promotion-sales ranking")
+
+
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--report-dir", type=Path, required=True)
@@ -105,6 +112,7 @@ def main() -> int:
         "Deal calendar check",
         "Competitor price and deal check",
         "Collection breakdown",
+        "Promotion-associated sales",
     ]
     missing = [needle for needle in required if needle not in html]
     if missing:
@@ -115,6 +123,7 @@ def main() -> int:
         raise SystemExit("HTML contains weekly-only sections: " + ", ".join(present_forbidden))
     if "data:image" in html.lower():
         raise SystemExit("HTML must not embed data:image URLs")
+    validate_promotions(verification)
     attachments = build_inline_attachments(report_dir, args.target_date, html)
 
     payload = {
