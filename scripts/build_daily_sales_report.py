@@ -164,6 +164,7 @@ def promotion_summary(df: pd.DataFrame, checks: list[Check], label: str) -> dict
     monetary = ("sales", "item_discount", "shipping_discount", "net_sales")
     totals = {metric: float(round(sum(group[metric] for group in groups.values()), 2)) for metric in monetary}
     totals.update(units=sum(group["units"] for group in groups.values()), rows=len(df), orders=len(all_orders))
+    order_sets = {tuple(group["promotion_ids"]): group["order_ids"] for group in groups.values() if group["category"] == "identified"}
     output = []
     for group in groups.values():
         group["orders"] = len(group.pop("order_ids"))
@@ -171,8 +172,11 @@ def promotion_summary(df: pd.DataFrame, checks: list[Check], label: str) -> dict
             group[metric] = float(round(group[metric], 2))
         output.append(group)
     output.sort(key=lambda group: (group["category"] != "identified", -group["sales"], group["label"]))
+    remaining = [group for group in output if group["category"] == "identified"][10:]
+    other_totals = {metric: sum(group[metric] for group in remaining) for metric in (*monetary, "units")}
+    other_totals["orders"] = len(set().union(*(order_sets[tuple(group["promotion_ids"])] for group in remaining)))
     checks.append(Check(f"{label}_promotion_source", "pass", f"rows={len(df)}, exclusive_groups={len(output)}"))
-    return {"status": "pass", "groups": output, "totals": totals}
+    return {"status": "pass", "groups": output, "totals": totals, "other_identified_totals": other_totals}
 
 
 def normalize_orders(path: Path | None, target_date: str, dictionary: pd.DataFrame, checks: list[Check], label: str) -> tuple[pd.DataFrame, dict[str, Any]]:
@@ -551,15 +555,16 @@ def render_promotions(target_date: str, prior_date: str, promotions: dict[str, d
         displayed = identified[:10]
         if len(identified) > 10:
             remaining = identified[10:]
-            displayed.append({"label": f"Other {len(remaining)} identified groups", **{metric: sum(group[metric] for group in remaining) for metric in ("sales", "item_discount", "net_sales", "shipping_discount")}})
+            displayed.append({"label": f"Other {len(remaining)} identified groups", **item["other_identified_totals"]})
         displayed += controls
         displayed.append({"label": "All items — reconciliation total", **totals})
         rows = []
         for number, group in enumerate(displayed):
             rank = f"#{number + 1} · " if number < min(10, len(identified)) else ""
             name = escape(rank + group["label"])
-            rows.append(f"<tr><td style='padding:9px;border:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word'>{name}</td>" + "".join(f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right;white-space:nowrap'>{fmt_money(group[metric], 2)}</td>" for metric in ("sales", "item_discount", "net_sales", "shipping_discount")) + "</tr>")
-        sections.append("<table width='100%' cellpadding='0' cellspacing='0' style='table-layout:fixed;border-collapse:collapse;font-size:12px'><colgroup><col style='width:40%'><col style='width:15%'><col style='width:15%'><col style='width:15%'><col style='width:15%'></colgroup><tr style='background:#1f2937;color:#fff'>" + "".join(f"<th style='padding:9px;text-align:left;border:1px solid #1f2937'>{heading}</th>" for heading in ("Promotion / control", "Gross item sales", "Item discounts", "Net item sales", "Shipping discounts")) + "</tr>" + "".join(rows) + "</table>")
+            counts = "".join(f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_int(group[metric])}</td>" for metric in ("units", "orders"))
+            rows.append(f"<tr><td style='padding:9px;border:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word'>{name}</td>" + counts + "".join(f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right;white-space:nowrap'>{fmt_money(group[metric], 2)}</td>" for metric in ("sales", "item_discount", "net_sales", "shipping_discount")) + "</tr>")
+        sections.append("<table width='100%' cellpadding='0' cellspacing='0' style='table-layout:fixed;border-collapse:collapse;font-size:12px'><colgroup><col style='width:34%'><col style='width:6%'><col style='width:8%'><col style='width:13%'><col style='width:13%'><col style='width:13%'><col style='width:13%'></colgroup><tr style='background:#1f2937;color:#fff'>" + "".join(f"<th style='padding:9px;text-align:left;border:1px solid #1f2937'>{heading}</th>" for heading in ("Promotion / control", "Units", "Orders", "Gross item sales", "Item discounts", "Net item sales", "Shipping discounts")) + "</tr>" + "".join(rows) + "</table>")
     sections.append("<p style='font-size:11px;color:#667085'>Net item sales deduct item discounts only. Shipping discounts are separate. Unknown IDs are not assumed Lightning Deals. Distinct orders across promo groups are not additive.</p>")
     return "\n".join(sections)
 

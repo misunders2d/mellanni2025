@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -54,6 +55,13 @@ def validate_promotions(verification: dict[str, Any]) -> None:
         promo = verification.get("promotions", {}).get(day, {})
         if not day or promo.get("status") != "pass" or not promo.get("groups"):
             raise SystemExit("Daily report missing verified promotion-sales ranking")
+
+
+def validate_promotion_columns(html: str) -> None:
+    section = html.split("Promotion-associated sales", 1)[-1].split("Collection breakdown", 1)[0]
+    for column in ("Units", "Orders"):
+        if len(re.findall(r"<th\b[^>]*>" + column + r"</th>", section)) != 2:
+            raise SystemExit("Daily promotion tables must show Units and Orders for both dates")
 
 
 def parse_args() -> argparse.Namespace:
@@ -124,6 +132,7 @@ def main() -> int:
     if "data:image" in html.lower():
         raise SystemExit("HTML must not embed data:image URLs")
     validate_promotions(verification)
+    validate_promotion_columns(html)
     attachments = build_inline_attachments(report_dir, args.target_date, html)
 
     payload = {

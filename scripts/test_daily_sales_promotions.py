@@ -94,8 +94,16 @@ class PromotionsTest(unittest.TestCase):
         self.assertNotIn("<script>", html)
         self.assertIn("&lt;script&gt;", html)
         self.assertIn("Other 2 identified groups", html)
+        self.assertEqual(result["other_identified_totals"]["units"], 2)
+        self.assertEqual(result["other_identified_totals"]["orders"], 1)  # Same order spans two omitted promos.
         self.assertIn("No recorded promotion", html)
         self.assertIn("All items — reconciliation total", html)
+        DRAFT.validate_promotion_columns(html)
+        self.assertEqual(html.count(">Units</th>"), 2)
+        self.assertEqual(html.count(">Orders</th>"), 2)
+        for missing in (html.replace(">Units</th>", ">Missing</th>"), html.replace(">Orders</th>", ">Missing</th>", 1)):
+            with self.assertRaisesRegex(SystemExit, "must show Units and Orders"):
+                DRAFT.validate_promotion_columns(missing)
 
 
 if __name__ == "__main__":
