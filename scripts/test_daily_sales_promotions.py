@@ -44,13 +44,25 @@ class PromotionsTest(unittest.TestCase):
         result, _ = self.summarize([self.row(item="2"), self.row(ship="3"), self.row(), self.row("nan", "5", "1")])
         groups = {g["category"]: g for g in result["groups"]}
         self.assertEqual(groups["unidentified"]["label"], "Unidentified promotion")
-        self.assertEqual(groups["unidentified"]["sales"], 25)
-        self.assertEqual(groups["no_recorded_promotion"]["sales"], 10)
+        self.assertEqual(groups["unidentified"]["sales"], 15)
+        self.assertEqual(groups["no_recorded_promotion"]["sales"], 20)
         self.assertEqual(result["totals"]["net_sales"], 32)
         self.assertEqual(result["totals"]["shipping_discount"], 3)
         html = REPORT.render_promotions("D1", "D2", {"D1": result, "D2": result})
         self.assertIn("No identified promotion ranking available", html)
         self.assertIn("not incremental lift", html)
+
+    def test_actual_discount_is_sales_weighted_excludes_shipping_and_handles_zero_sales(self):
+        result, _ = self.summarize([self.row("Advertised 40%", "100", "10", "50"), self.row("Advertised 40%", "50", "20"), self.row("Zero", "0", "0")])
+        html = REPORT.render_promotions("D1", "D2", {"D1": result, "D2": result})
+        self.assertEqual(html.count(">Actual discount %</th>"), 2)
+        self.assertIn(">20.00%</td>", html)  # 30 / 150, not mean(10%, 40%) or advertised 40%.
+        self.assertIn(">—</td>", html)
+        self.assertNotIn("Shipping discounts", html)
+        DRAFT.validate_promotion_columns(html)
+        for invalid in (html.replace(">Actual discount %</th>", ">Missing</th>", 1), html.replace(">Actual discount %</th>", ">Shipping discounts</th>")):
+            with self.assertRaises(SystemExit):
+                DRAFT.validate_promotion_columns(invalid)
 
     def test_draft_requires_both_dates_verified_promotions(self):
         result, _ = self.summarize([self.row("A")])
@@ -102,7 +114,7 @@ class PromotionsTest(unittest.TestCase):
         self.assertEqual(html.count(">Units</th>"), 2)
         self.assertEqual(html.count(">Orders</th>"), 2)
         for missing in (html.replace(">Units</th>", ">Missing</th>"), html.replace(">Orders</th>", ">Missing</th>", 1)):
-            with self.assertRaisesRegex(SystemExit, "must show Units and Orders"):
+            with self.assertRaisesRegex(SystemExit, "must show Units, Orders"):
                 DRAFT.validate_promotion_columns(missing)
 
 

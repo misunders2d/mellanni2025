@@ -142,7 +142,7 @@ def promotion_summary(df: pd.DataFrame, checks: list[Check], label: str) -> dict
             order = str(row[columns["order"]]).strip()
             if not order or order.lower() in {"nan", "null", "none"}:
                 raise ValueError("missing order ID")
-            category = "identified" if ids else "unidentified" if item_discount or shipping_discount else "no_recorded_promotion"
+            category = "identified" if ids else "unidentified" if item_discount else "no_recorded_promotion"
             key = (category, *ids)
             if key not in groups:
                 groups[key] = {
@@ -563,9 +563,10 @@ def render_promotions(target_date: str, prior_date: str, promotions: dict[str, d
             rank = f"#{number + 1} · " if number < min(10, len(identified)) else ""
             name = escape(rank + group["label"])
             counts = "".join(f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_int(group[metric])}</td>" for metric in ("units", "orders"))
-            rows.append(f"<tr><td style='padding:9px;border:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word'>{name}</td>" + counts + "".join(f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right;white-space:nowrap'>{fmt_money(group[metric], 2)}</td>" for metric in ("sales", "item_discount", "net_sales", "shipping_discount")) + "</tr>")
-        sections.append("<table width='100%' cellpadding='0' cellspacing='0' style='table-layout:fixed;border-collapse:collapse;font-size:12px'><colgroup><col style='width:34%'><col style='width:6%'><col style='width:8%'><col style='width:13%'><col style='width:13%'><col style='width:13%'><col style='width:13%'></colgroup><tr style='background:#1f2937;color:#fff'>" + "".join(f"<th style='padding:9px;text-align:left;border:1px solid #1f2937'>{heading}</th>" for heading in ("Promotion / control", "Units", "Orders", "Gross item sales", "Item discounts", "Net item sales", "Shipping discounts")) + "</tr>" + "".join(rows) + "</table>")
-    sections.append("<p style='font-size:11px;color:#667085'>Net item sales deduct item discounts only. Shipping discounts are separate. Unknown IDs are not assumed Lightning Deals. Distinct orders across promo groups are not additive.</p>")
+            discount_pct = fmt_pct(group["item_discount"] / group["sales"]) if group["sales"] > 0 else "—"
+            rows.append(f"<tr><td style='padding:9px;border:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word'>{name}</td>" + counts + "".join(f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right;white-space:nowrap'>{fmt_money(group[metric], 2)}</td>" for metric in ("sales", "item_discount", "net_sales")) + f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{discount_pct}</td></tr>")
+        sections.append("<table width='100%' cellpadding='0' cellspacing='0' style='table-layout:fixed;border-collapse:collapse;font-size:12px'><colgroup><col style='width:34%'><col style='width:6%'><col style='width:8%'><col style='width:13%'><col style='width:13%'><col style='width:13%'><col style='width:13%'></colgroup><tr style='background:#1f2937;color:#fff'>" + "".join(f"<th style='padding:9px;text-align:left;border:1px solid #1f2937'>{heading}</th>" for heading in ("Promotion / control", "Units", "Orders", "Gross item sales", "Item discounts", "Net item sales", "Actual discount %")) + "</tr>" + "".join(rows) + "</table>")
+    sections.append("<p style='font-size:11px;color:#667085'>Actual discount % = item discounts ÷ gross item sales (sales-weighted); zero gross sales is shown as —. Net item sales deduct item discounts only. Unknown IDs are not assumed Lightning Deals. Distinct orders across promo groups are not additive.</p>")
     return "\n".join(sections)
 
 

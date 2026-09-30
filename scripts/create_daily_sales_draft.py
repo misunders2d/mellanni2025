@@ -59,9 +59,11 @@ def validate_promotions(verification: dict[str, Any]) -> None:
 
 def validate_promotion_columns(html: str) -> None:
     section = html.split("Promotion-associated sales", 1)[-1].split("Collection breakdown", 1)[0]
-    for column in ("Units", "Orders"):
+    if "Shipping discounts" in section:
+        raise SystemExit("Shipping discounts do not belong in product promotion tables")
+    for column in ("Units", "Orders", "Actual discount %"):
         if len(re.findall(r"<th\b[^>]*>" + column + r"</th>", section)) != 2:
-            raise SystemExit("Daily promotion tables must show Units and Orders for both dates")
+            raise SystemExit("Daily promotion tables must show Units, Orders, and Actual discount % for both dates")
 
 
 def parse_args() -> argparse.Namespace:
