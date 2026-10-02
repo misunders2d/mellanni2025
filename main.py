@@ -183,6 +183,14 @@ class MainApp(QMainWindow):
         )
         self.tools_layout.addWidget(self.push_dictionary_button, 5, 0)
 
+        self.flagged_words_button = QPushButton("Check flagged words")
+        self.flagged_words_button.clicked.connect(
+            lambda: self.run_task(
+                "flagged_words", self.flagged_words_button, "bulk_process_files"
+            )
+        )
+        self.tools_layout.addWidget(self.flagged_words_button, 6, 0)
+
     def run_task(self, script_name, button, func_name="main"):
         original_text = button.text()
         button.setText("Please wait...")
