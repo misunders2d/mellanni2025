@@ -68,12 +68,18 @@ class DailyCompetitorGateTest(unittest.TestCase):
         cached_at: float | None = None,
         payload_asin: str | None = None,
         buy_box_shipping_cents: int = 0,
+        prime_exclusive_cents: int | None = None,
+        lightning_deal_cents: int | None = None,
     ) -> None:
         csv_data = [None] * 36
         csv_data[0] = [1, 2500]
         csv_data[1] = [1, 2000]
         csv_data[4] = [1, 3999]
         csv_data[18] = [1, 1999, buy_box_shipping_cents]
+        if prime_exclusive_cents is not None:
+            csv_data[33] = [1, prime_exclusive_cents]
+        if lightning_deal_cents is not None:
+            csv_data[8] = [1, lightning_deal_cents]
         product = {
             "asin": payload_asin or asin,
             "brand": brand,
@@ -134,6 +140,25 @@ class DailyCompetitorGateTest(unittest.TestCase):
         snapshot = PREP.build_snapshot(self.config, self.cache, 60)
         cgk = next(item for item in snapshot["products"] if item["brand"] == "CGK Unlimited")
         self.assertTrue(cgk["best_or_lightning_deal"])
+
+    def test_snapshot_prioritizes_prime_exclusive_and_lightning_deal(self) -> None:
+        for item in self.config["products"]:
+            if item["brand"] == "CGK Unlimited":
+                self.write_cache(item["asin"], item["brand"], prime_exclusive_cents=1749)
+            elif item["brand"] == "Utopia Bedding":
+                self.write_cache(item["asin"], item["brand"], lightning_deal_cents=1599)
+            else:
+                self.write_cache(item["asin"], item["brand"])
+        snapshot = PREP.build_snapshot(self.config, self.cache, 60)
+        cgk = next(item for item in snapshot["products"] if item["brand"] == "CGK Unlimited")
+        self.assertEqual(cgk["current_price"], 17.49)
+        self.assertEqual(cgk["current_price_source"], "prime_exclusive")
+        utopia = next(item for item in snapshot["products"] if item["brand"] == "Utopia Bedding")
+        self.assertEqual(utopia["current_price"], 15.99)
+        self.assertEqual(utopia["current_price_source"], "lightning_deal")
+        amazon = next(item for item in snapshot["products"] if item["brand"] == "Amazon Basics")
+        self.assertEqual(amazon["current_price"], 19.99)
+        self.assertEqual(amazon["current_price_source"], "buy_box")
 
     def test_snapshot_accepts_exact_60_minute_boundary(self) -> None:
         now = 10_000.0

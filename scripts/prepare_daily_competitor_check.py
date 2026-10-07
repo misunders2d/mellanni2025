@@ -86,7 +86,7 @@ def extract_product(entry: dict[str, str], product: dict[str, Any], now: float, 
         name: price_from_csv(csv_data[index] if len(csv_data) > index else None, row_size)
         for name, (index, row_size) in CSV_MAP.items()
     }
-    current_source = next((name for name in ("buy_box", "new_fba", "new_3p", "amazon") if prices[name] is not None), None)
+    current_source = next((name for name in ("lightning_deal", "prime_exclusive", "buy_box", "new_fba", "new_3p", "amazon") if prices[name] is not None), None)
     if current_source is None:
         raise ValueError(f"{asin}: no current consumer price")
 
