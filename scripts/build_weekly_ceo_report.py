@@ -624,7 +624,7 @@ def render_html(context: dict[str, Any]) -> str:
     products = context["products"].head(10)
     asins = context["asins"].head(12)
     promos = context["promos"].head(10)
-    keywords = context["keywords"].head(15)
+    keywords = context["keywords"]
     reconciliation = context.get("source_reconciliation", pd.DataFrame())
     current_reconciliation = reconciliation[reconciliation["period"].eq("current")] if not reconciliation.empty else pd.DataFrame()
     deltas = {str(r.metric): float(r.product_minus_account) for r in current_reconciliation.itertuples(index=False)}
@@ -734,7 +734,10 @@ def render_html(context: dict[str, Any]) -> str:
         f"<tr><td style='padding:6px'>{escape(str(r.collection))}</td><td style='padding:6px'>{html_bar(r.sales_delta, max_delta, '#b91c1c' if r.sales_delta < 0 else '#0f8a4b')}</td><td style='padding:6px;text-align:right;color:{'#b91c1c' if r.sales_delta < 0 else '#0f8a4b'}'>{fmt_money(r.sales_delta)}</td></tr>"
         for r in product_delta.itertuples(index=False)
     )
-    kw_move = context["keywords"].copy().head(10)
+    # Movement coverage must not be capped by keyword demand ranking.
+    kw_move = keywords[keywords["rank_change"].notna()].copy()
+    kw_move = kw_move.sort_values("rank_change", key=lambda values: values.abs(), ascending=False)
+    movement_coverage = f"{len(kw_move)} of {len(keywords)} keywords have both date observations; {len(keywords) - len(kw_move)} lack one or both observations and remain blank in the standings table."
     max_kw_sales = kw_move["keyword_sales"].max() if len(kw_move) and "keyword_sales" in kw_move else 0
     keyword_header = (
         "<tr>"
@@ -781,7 +784,7 @@ def render_html(context: dict[str, Any]) -> str:
   <h2 style="font-size:20px;margin:20px 0 10px">Charts</h2>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare all-orders gross item sales within this two-week view.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Largest collection movers by absolute WoW sales delta; red = decline, green = gain.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div>
-  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>H10 keyword demand / rank movement</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars show H10 estimated weekly keyword sales relative to the top row in this chart; rank is the best organic rank found across fetched Mellanni ASINs. Rank change compares this H10 pull against the prior report’s H10 snapshot: rank_movement = prior_position - current_position. Positive means rank number dropped/improved (green ↓ N); negative means rank number rose/worsened (red ↑ N); zero is neutral 0. H10 metrics are estimates; SQP is layered only for purchase-behavior diagnostics.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
+  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>H10 keyword demand / rank movement</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">All verified rank comparisons are shown, ordered by absolute rank change. Organic ranks compare {d['prior_end']} with {d['week_end']} (Pacific), using the same ASIN and keyword on both dates. {movement_coverage} rank_movement = prior_position - current_position; green ↓ N means improved; red ↑ N means worsened; 0 means unchanged. Bars show current H10 estimated weekly keyword sales, not rank change or Mellanni revenue.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
 
   <h2 style="font-size:18px;margin:18px 0 8px">Product / collection conversion change</h2>{product_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Top ASINs</h2>{asin_table}
