@@ -8,6 +8,7 @@ import json
 import math
 import zipfile
 from datetime import datetime, timedelta
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -189,16 +190,18 @@ def main() -> int:
     prior_h10_path = base / "h10" / "h10_prior_keyword_candidates.csv"
     h10_movement_required = prior_h10_path.exists()
     h10_movement_labels_present = all(label in html for label in [
-        "H10 keyword demand / rank movement",
-        "Relative H10 keyword-sales estimate",
-        "H10 est. weekly keyword sales",
-        "Best organic rank",
-        "Rank change vs prior H10",
+        "H10 keyword standings with SQP diagnostics",
+        "H10 Kw Sales",
+        "Org. Rank",
+        "Prior Org. Rank",
+        "Rank Change",
         "rank_movement = prior_position - current_position",
         "green ↓ N",
         "red ↑ N",
     ])
     check(checks, "html_h10_movement_labeled", (not h10_movement_required) or h10_movement_labels_present, "If prior H10 exists, CEO chart must label keyword-sales estimate, organic rank, and exact signed rank change")
+    keyword_table_count = len(re.findall(r"<th\b[^>]*>\s*Keyword\s*</th>", html, re.IGNORECASE))
+    check(checks, "exactly_one_keyword_table", keyword_table_count == 1, f"tables={keyword_table_count}")
     check(checks, "promo_rows_present", len(promos) > 0, f"rows={len(promos)}")
 
     status = "pass" if all(c["status"] == "pass" for c in checks) else "fail"

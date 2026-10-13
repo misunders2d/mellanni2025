@@ -734,24 +734,8 @@ def render_html(context: dict[str, Any]) -> str:
         f"<tr><td style='padding:6px'>{escape(str(r.collection))}</td><td style='padding:6px'>{html_bar(r.sales_delta, max_delta, '#b91c1c' if r.sales_delta < 0 else '#0f8a4b')}</td><td style='padding:6px;text-align:right;color:{'#b91c1c' if r.sales_delta < 0 else '#0f8a4b'}'>{fmt_money(r.sales_delta)}</td></tr>"
         for r in product_delta.itertuples(index=False)
     )
-    # Movement coverage must not be capped by keyword demand ranking.
-    kw_move = keywords[keywords["rank_change"].notna()].copy()
-    kw_move = kw_move.sort_values("rank_change", key=lambda values: values.abs(), ascending=False)
-    movement_coverage = f"{len(kw_move)} of {len(keywords)} keywords have both date observations; {len(keywords) - len(kw_move)} lack one or both observations and remain blank in the standings table."
-    max_kw_sales = kw_move["keyword_sales"].max() if len(kw_move) and "keyword_sales" in kw_move else 0
-    keyword_header = (
-        "<tr>"
-        "<th style='padding:6px;text-align:left;color:#475467;font-size:12px'>Keyword</th>"
-        "<th style='padding:6px;text-align:left;color:#475467;font-size:12px'>Relative H10 keyword-sales estimate</th>"
-        "<th style='padding:6px;text-align:right;color:#475467;font-size:12px'>H10 est. weekly keyword sales</th>"
-        "<th style='padding:6px;text-align:right;color:#475467;font-size:12px'>Best organic rank</th>"
-        "<th style='padding:6px;text-align:right;color:#475467;font-size:12px'>Rank change vs prior H10</th>"
-        "</tr>"
-    )
-    keyword_rows = keyword_header + "".join(
-        f"<tr><td style='padding:6px'>{escape(str(r.keyword))}</td><td style='padding:6px'>{html_bar(getattr(r, 'keyword_sales', 0), max_kw_sales, '#2563eb')}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'keyword_sales', 0))}</td><td style='padding:6px;text-align:right'>{fmt_int(getattr(r, 'organic_rank', 0))}</td><td style='padding:6px;text-align:right;color:{'#0f8a4b' if str(getattr(r, 'rank_change_label', '—')).startswith('↓') else ('#b91c1c' if str(getattr(r, 'rank_change_label', '—')).startswith('↑') else '#667085')}'>{escape(str(getattr(r, 'rank_change_label', '—')))}</td></tr>"
-        for r in kw_move.itertuples(index=False)
-    )
+    paired_count = int(keywords["rank_change"].notna().sum())
+    movement_coverage = f"{paired_count} of {len(keywords)} keywords have both date observations; missing observations remain blank."
 
     product_table = render_table(products.to_dict("records"), [
         ("collection", "Collection"), ("sales", "Sales"), ("sales_wow", "Sales WoW"), ("sessions", "Sessions"), ("units", "Units"), ("unit_conversion", "Conv."), ("conversion_pp", "Conv. pp")
@@ -784,12 +768,11 @@ def render_html(context: dict[str, Any]) -> str:
   <h2 style="font-size:20px;margin:20px 0 10px">Charts</h2>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare all-orders gross item sales within this two-week view.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div>
   <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Largest collection movers by absolute WoW sales delta; red = decline, green = gain.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div>
-  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>H10 keyword demand / rank movement</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">All verified rank comparisons are shown, ordered by absolute rank change. Organic ranks compare {d['prior_end']} with {d['week_end']} (Pacific), using the same ASIN and keyword on both dates. {movement_coverage} rank_movement = prior_position - current_position; green ↓ N means improved; red ↑ N means worsened; 0 means unchanged. Bars show current H10 estimated weekly keyword sales, not rank change or Mellanni revenue.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{keyword_rows}</table></div>
 
   <h2 style="font-size:18px;margin:18px 0 8px">Product / collection conversion change</h2>{product_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Top ASINs</h2>{asin_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Top promo discounts</h2><p style="font-size:12px;color:#667085">Net item sales deduct item promo discounts only. Shipment/shipping promotions are not product promotions and are not included in this CEO promotion view. Blank/unknown Amazon promo labels are displayed as LD.</p>{promo_table}
-  <h2 style="font-size:18px;margin:18px 0 8px">H10 keyword standings with SQP diagnostics</h2><p style="font-size:12px;color:#667085">Current Helium 10/Cerebro data is the keyword source. SQP columns are behavior overlays for overlapping terms only.</p>{keyword_table}
+  <h2 style="font-size:18px;margin:18px 0 8px">H10 keyword standings with SQP diagnostics</h2><p style="font-size:12px;color:#667085">Organic ranks compare {d['prior_end']} with {d['week_end']} (Pacific). {movement_coverage} rank_movement = prior_position - current_position; green ↓ N means improved, red ↑ N means worsened. H10 demand metrics are estimates; SQP supplies shopper-behavior diagnostics.</p>{keyword_table}
   <p style="font-size:12px;color:#667085;margin-top:16px">Full workbook attached.</p>
 </div>
 """.strip()

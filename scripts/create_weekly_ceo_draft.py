@@ -67,11 +67,11 @@ def main() -> int:
     prior_h10_path = report_dir / "h10" / "h10_prior_keyword_candidates.csv"
     if prior_h10_path.exists():
         h10_movement_labels = [
-            "H10 keyword demand / rank movement",
-            "Relative H10 keyword-sales estimate",
-            "H10 est. weekly keyword sales",
-            "Best organic rank",
-            "Rank change vs prior H10",
+            "H10 keyword standings with SQP diagnostics",
+            "H10 Kw Sales",
+            "Org. Rank",
+            "Prior Org. Rank",
+            "Rank Change",
             "rank_movement = prior_position - current_position",
             "green ↓ N",
             "red ↑ N",
