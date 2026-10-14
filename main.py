@@ -215,6 +215,19 @@ class MainApp(QMainWindow):
         self.executor.start(worker)
 
     def update_git(self):
+        choice = QMessageBox.warning(
+            self,
+            "Confirm update",
+            "Update to the latest master?\n\n"
+            "Local commits and uncommitted changes will be discarded.\n"
+            "Files not tracked or ignored by Git will be deleted.\n"
+            "Ignored settings and .venv will be kept.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if choice != QMessageBox.StandardButton.Yes:
+            return
+
         repo_dir = Path(__file__).resolve().parent
         commands = (
             ["git", "fetch", "origin", "+refs/heads/master:refs/remotes/origin/master"],
