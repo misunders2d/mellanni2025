@@ -213,6 +213,45 @@ class DailyCompetitorGateTest(unittest.TestCase):
         self.assertEqual(len(products), 3)
         self.assertEqual(checks[-1].status, "pass")
 
+    def test_snapshot_target_date_surfaces_ended_historical_deal(self) -> None:
+        # 2026-10-13 in Pacific is 2026-10-13 07:00:00 UTC to 2026-10-14 07:00:00 UTC
+        # Deal: 2026-10-13 08:20 PDT (15:20 UTC) to 2026-10-13 20:20 PDT (10-14 03:20 UTC)
+        # 1791904800 is 2026-10-13 15:20:00 UTC
+        start_epoch = 1791904800
+        end_epoch = start_epoch + 12 * 3600
+        k_start = int(start_epoch // 60) - 21_564_000
+        k_end = int(end_epoch // 60) - 21_564_000
+
+        for item in self.config["products"]:
+            if item["brand"] == "CGK Unlimited":
+                csv_data = [None] * 36
+                csv_data[0] = [1, 2500]
+                csv_data[1] = [1, 2000]
+                csv_data[4] = [1, 3999]
+                csv_data[18] = [1, 2499, 0]
+                # Deal active during 12h, then ends (-1)
+                csv_data[8] = [k_start, 2122, k_end, -1]
+                product = {
+                    "asin": item["asin"],
+                    "brand": item["brand"],
+                    "title": f"{item['brand']} sheets",
+                    "_cached_at": time.time(),
+                    "csv": csv_data,
+                    "deals": [],  # Live deals empty because deal already ended!
+                }
+                (self.cache / f"{item['asin']}.json").write_text(json.dumps(product), encoding="utf-8")
+            else:
+                self.write_cache(item["asin"], item["brand"])
+
+        snapshot = PREP.build_snapshot(self.config, self.cache, 60, target_date="2026-10-13")
+        cgk = next(p for p in snapshot["products"] if p["brand"] == "CGK Unlimited")
+        self.assertEqual(cgk["current_price"], 21.22)
+        self.assertEqual(cgk["current_price_source"], "lightning_deal")
+        self.assertTrue(cgk["best_or_lightning_deal"])
+        self.assertEqual(cgk["duration_hours"], 12.0)
+        self.assertEqual(cgk["duration_status"], "complete")
+        self.assertEqual(cgk["deals"][0]["badge"], "Lightning Deal")
+
 
 if __name__ == "__main__":
     unittest.main()
