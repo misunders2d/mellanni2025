@@ -1,5 +1,6 @@
 import subprocess
 import sys
+from pathlib import Path
 
 from PySide6.QtCore import QRunnable, Qt, QThreadPool, Slot
 from PySide6.QtGui import QPixmap
@@ -8,6 +9,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
@@ -213,8 +215,30 @@ class MainApp(QMainWindow):
         self.executor.start(worker)
 
     def update_git(self):
-        subprocess.call(["git", "restore", "."])
-        subprocess.call(["git", "pull", "-f"])
+        repo_dir = Path(__file__).resolve().parent
+        commands = (
+            ["git", "fetch", "origin", "+refs/heads/master:refs/remotes/origin/master"],
+            ["git", "reset", "--hard", "origin/master"],
+            ["git", "clean", "-fd"],
+        )
+        self.update_button.setEnabled(False)
+        try:
+            for command in commands:
+                subprocess.run(command, cwd=repo_dir, check=True)
+        except (OSError, subprocess.CalledProcessError) as error:
+            QMessageBox.critical(
+                self,
+                "Update failed",
+                f"Could not update from master. Check the console for details.\n{error}",
+            )
+        else:
+            QMessageBox.information(
+                self,
+                "Update complete",
+                "Updated to the latest master.\nRestart the application to load the updated code.",
+            )
+        finally:
+            self.update_button.setEnabled(True)
 
 
 if __name__ == "__main__":
