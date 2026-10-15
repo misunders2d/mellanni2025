@@ -13,6 +13,7 @@ import os
 import re
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import pandas as pd
@@ -26,6 +27,7 @@ os.chdir(PROJECT_ROOT)
 from classes.dataset import Dataset
 from classes.product import Product
 from common import excluded_collections, user_folder
+from utils import decorators as error_decorators
 from utils import mellanni_modules as mm
 
 SHEET_NAME = "isr_sku_asin"
@@ -93,11 +95,15 @@ def parse_args() -> argparse.Namespace:
         "--end",
         help="Optional end date override: YYYY-MM-DD (must be used with --start)",
     )
-    parser.add_argument("--market", default="US", help="Marketplace (default: US)")
+    parser.add_argument(
+        "--market",
+        default="US",
+        help="Marketplace (default: US); included in the default output filename",
+    )
     parser.add_argument(
         "--output",
         type=Path,
-        help="Optional output XLSX path; default: ~/temp/isr_START_to_END.xlsx",
+        help="Optional output XLSX path; default: ~/temp/isr_MARKET_START_to_END.xlsx",
     )
     return parser.parse_args()
 
@@ -147,8 +153,8 @@ def resolve_report_period(
     return start_date.isoformat(), end_date.isoformat()
 
 
-def default_output_path(start: str, end: str) -> Path:
-    return DEFAULT_OUTPUT_DIR / f"isr_{start}_to_{end}.xlsx"
+def default_output_path(start: str, end: str, market: str = "US") -> Path:
+    return DEFAULT_OUTPUT_DIR / f"isr_{market}_{start}_to_{end}.xlsx"
 
 
 def all_gui_selectable_asins(dictionary: pd.DataFrame) -> list[str]:
@@ -210,6 +216,28 @@ def verify_local_dataset_loaded(dataset: Dataset) -> None:
         )
 
 
+class CLIExecutionError(RuntimeError):
+    """An error from a GUI-decorated operation during non-interactive execution."""
+
+
+@contextmanager
+def non_interactive_errors():
+    """Convert helper-package GUI error popups into ordinary CLI exceptions."""
+    original_popup = error_decorators.PopupError
+
+    def raise_cli_error(*args, **kwargs):
+        message = kwargs.get("message")
+        if message is None and args:
+            message = args[0]
+        raise CLIExecutionError(str(message or "ISR operation failed."))
+
+    error_decorators.PopupError = raise_cli_error
+    try:
+        yield
+    finally:
+        error_decorators.PopupError = original_popup
+
+
 def export_single_sheet(df: pd.DataFrame, output: Path) -> None:
     output = output.expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -228,7 +256,7 @@ def run(
 
     print(f"[1/6] Finding the latest available Cloud inventory date for {market}...")
     start, end = resolve_report_period(market, start_override, end_override)
-    output = output or default_output_path(start, end)
+    output = output or default_output_path(start, end, market)
     print(
         f"      Report period: {start} through {end} ({REPORT_DAYS} calendar days; "
         "newest Cloud day excluded)."
@@ -297,12 +325,13 @@ def run(
 def main() -> int:
     args = parse_args()
     try:
-        run(
-            market=args.market.upper(),
-            output=args.output,
-            start_override=args.start,
-            end_override=args.end,
-        )
+        with non_interactive_errors():
+            run(
+                market=args.market.upper(),
+                output=args.output,
+                start_override=args.start,
+                end_override=args.end,
+            )
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
