@@ -24,6 +24,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
 
+from classes import dataset as dataset_module
 from classes.dataset import Dataset
 from classes.product import Product
 from common import excluded_collections, user_folder
@@ -217,13 +218,14 @@ def verify_local_dataset_loaded(dataset: Dataset) -> None:
 
 
 class CLIExecutionError(RuntimeError):
-    """An error from a GUI-decorated operation during non-interactive execution."""
+    """An error from a legacy report operation during non-interactive execution."""
 
 
 @contextmanager
 def non_interactive_errors():
-    """Convert helper-package GUI error popups into ordinary CLI exceptions."""
+    """Convert report popups and legacy errors into ordinary CLI exceptions."""
     original_popup = error_decorators.PopupError
+    original_dataset_popup = dataset_module.PopupError
 
     def raise_cli_error(*args, **kwargs):
         message = kwargs.get("message")
@@ -232,10 +234,16 @@ def non_interactive_errors():
         raise CLIExecutionError(str(message or "ISR operation failed."))
 
     error_decorators.PopupError = raise_cli_error
+    dataset_module.PopupError = raise_cli_error
     try:
         yield
+    except BaseException as error:
+        if type(error) is BaseException:
+            raise CLIExecutionError(str(error)) from error
+        raise
     finally:
         error_decorators.PopupError = original_popup
+        dataset_module.PopupError = original_dataset_popup
 
 
 def export_single_sheet(df: pd.DataFrame, output: Path) -> None:
