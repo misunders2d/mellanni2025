@@ -31,7 +31,7 @@ import pandas as pd
 from report_storage import require_tmp_artifact_path
 
 DEFAULT_COMPETITOR_CONFIG = Path(__file__).parents[1] / "report_configs/daily_sales_competitors.json"
-REQUIRED_COMPETITOR_BRANDS = {"Amazon Basics", "Utopia Bedding", "CGK Unlimited"}
+REQUIRED_COMPETITOR_BRANDS = {"Amazon Basics", "Utopia Bedding", "CGK Unlimited", "Bedsure"}
 COMPETITOR_MAX_AGE_MINUTES = 60
 
 

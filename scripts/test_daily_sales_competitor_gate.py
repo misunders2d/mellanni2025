@@ -50,6 +50,7 @@ class DailyCompetitorGateTest(unittest.TestCase):
                 {"brand": "Amazon Basics", "asin": "B00Q7OARO2", "label": "Amazon set"},
                 {"brand": "Utopia Bedding", "asin": "B00NX0WXQI", "label": "Utopia set"},
                 {"brand": "CGK Unlimited", "asin": "B01M16WBW1", "label": "CGK set"},
+                {"brand": "Bedsure", "asin": "B07P5NBRL5", "label": "Bedsure set"},
             ],
         }
         self.config_path = self.root / "competitors.json"
@@ -99,10 +100,10 @@ class DailyCompetitorGateTest(unittest.TestCase):
             self.write_cache(item["asin"], item["brand"], deal=item["brand"] == "CGK Unlimited")
         return PREP.build_snapshot(self.config, self.cache, 60)
 
-    def test_snapshot_requires_three_brands_and_surfaces_deal_limit(self) -> None:
+    def test_snapshot_requires_configured_brands_and_surfaces_deal_limit(self) -> None:
         snapshot = self.build()
         self.assertEqual(snapshot["status"], "pass")
-        self.assertEqual(len(snapshot["products"]), 3)
+        self.assertEqual(len(snapshot["products"]), 4)
         cgk = next(item for item in snapshot["products"] if item["brand"] == "CGK Unlimited")
         self.assertEqual(cgk["current_price"], 19.99)
         self.assertEqual(cgk["current_price_source"], "buy_box")
@@ -182,7 +183,7 @@ class DailyCompetitorGateTest(unittest.TestCase):
         products = REPORT.read_competitor_check(path, self.config_path, checks)
         self.assertEqual(products, [])
         self.assertEqual(checks[-1].status, "fail")
-        self.assertIn("CGK Unlimited", checks[-1].details)
+        self.assertIn("Bedsure", checks[-1].details)
 
     def test_report_rejects_configured_asin_mismatch(self) -> None:
         snapshot = self.build()
@@ -210,7 +211,7 @@ class DailyCompetitorGateTest(unittest.TestCase):
         path.write_text(json.dumps(self.build()), encoding="utf-8")
         checks = []
         products = REPORT.read_competitor_check(path, self.config_path, checks)
-        self.assertEqual(len(products), 3)
+        self.assertEqual(len(products), 4)
         self.assertEqual(checks[-1].status, "pass")
 
     def test_snapshot_target_date_surfaces_ended_historical_deal(self) -> None:

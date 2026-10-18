@@ -20,7 +20,7 @@ from report_storage import require_tmp_artifact_path
 PACIFIC = ZoneInfo("America/Los_Angeles")
 DEFAULT_CONFIG = Path(__file__).parents[1] / "report_configs/daily_sales_competitors.json"
 DEFAULT_CACHE = Path("/home/misunderstood/.pi/agent/keepa-cache")
-REQUIRED_BRANDS = {"Amazon Basics", "Utopia Bedding", "CGK Unlimited"}
+REQUIRED_BRANDS = {"Amazon Basics", "Utopia Bedding", "CGK Unlimited", "Bedsure"}
 CSV_MAP = {
     "amazon": (0, 2),
     "new_3p": (1, 2),
