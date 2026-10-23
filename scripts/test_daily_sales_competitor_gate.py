@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -246,12 +247,65 @@ class DailyCompetitorGateTest(unittest.TestCase):
 
         snapshot = PREP.build_snapshot(self.config, self.cache, 60, target_date="2026-10-13")
         cgk = next(p for p in snapshot["products"] if p["brand"] == "CGK Unlimited")
-        self.assertEqual(cgk["current_price"], 21.22)
-        self.assertEqual(cgk["current_price_source"], "lightning_deal")
+        # The ended deal is reported on the date, but never as today's live price.
+        self.assertEqual(cgk["current_price"], 24.99)
+        self.assertEqual(cgk["current_price_source"], "buy_box")
+        self.assertEqual(cgk["date_deals"][0]["deal_price"], 21.22)
         self.assertTrue(cgk["best_or_lightning_deal"])
         self.assertEqual(cgk["duration_hours"], 12.0)
         self.assertEqual(cgk["duration_status"], "complete")
         self.assertEqual(cgk["deals"][0]["badge"], "Lightning Deal")
+
+    def test_deal_duration_uses_real_elapsed_hours_across_dst(self) -> None:
+        start = datetime.fromisoformat("2026-11-01T01:30:00-07:00").timestamp() // 60 - 21_564_000
+        end = datetime.fromisoformat("2026-11-01T01:30:00-08:00").timestamp() // 60 - 21_564_000
+        day_start, day_end = PREP.day_bounds("2026-11-01")
+        intervals = PREP.deal_intervals([int(start), 1999, int(end), -1], day_start, day_end)
+        self.assertEqual(intervals[0]["duration_hours"], 1.0)  # wall-clock subtraction would give 0.0
+
+    def test_report_rejects_snapshot_prepared_for_another_date(self) -> None:
+        path = self.root / "competitor_check.json"
+        snapshot = PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(), 60, target_date="2026-10-22")
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        checks = []
+        self.assertEqual(REPORT.read_competitor_check(path, self.config_path, checks, target_date="2026-10-23"), [])
+        self.assertEqual(checks[-1].status, "fail")
+
+    def mcp_payload(self, *, checked_at: str | None = None) -> dict:
+        checked = checked_at or datetime.now(timezone.utc).isoformat()
+        products = []
+        for item in self.config["products"]:
+            products.append({
+                "asin": item["asin"], "brand": item["brand"], "title": f"{item['brand']} sheets",
+                "current_price": 14.39, "current_price_source": "buy_box", "list_price": None, "coupon": None,
+                "active_deals": [{"type": "LIMITED_TIME_DEAL", "badge": "Limited time deal", "access": "ALL", "start": None, "end": None}] if item["brand"] == "Bedsure" else [],
+                "date_deals": [{"type": "LIGHTNING_DEAL", "badge": "Lightning Deal", "deal_price": 12.99,
+                                "start": "2026-10-22T08:00:00-07:00", "end": "2026-10-22T20:00:00-07:00",
+                                "duration_hours": 12.0}] if item["brand"] == "CGK Unlimited" else [],
+                "checked_at_utc": checked,
+            })
+        return {"status": "success", "date_pt": "2026-10-22", "products": products}
+
+    def test_mcp_snapshot_builds_report_ready_products(self) -> None:
+        snapshot = PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(), 60, target_date="2026-10-22")
+        by_brand = {item["brand"]: item for item in snapshot["products"]}
+        self.assertTrue(by_brand["CGK Unlimited"]["best_or_lightning_deal"])
+        self.assertEqual(by_brand["CGK Unlimited"]["duration_status"], "complete")
+        self.assertFalse(by_brand["Bedsure"]["best_or_lightning_deal"])
+        self.assertEqual(by_brand["Bedsure"]["duration_status"], "not_exposed_by_keepa")
+        self.assertEqual(by_brand["Amazon Basics"]["duration_status"], "not_applicable")
+        path = self.root / "competitor_check.json"
+        path.write_text(json.dumps(snapshot), encoding="utf-8")
+        checks = []
+        self.assertEqual(len(REPORT.read_competitor_check(path, self.config_path, checks)), 4)
+        self.assertEqual(checks[-1].status, "pass")
+
+    def test_mcp_snapshot_rejects_wrong_date_and_stale_evidence(self) -> None:
+        with self.assertRaisesRegex(ValueError, "2026-10-21"):
+            PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(), 60, target_date="2026-10-21")
+        stale = (datetime.now(timezone.utc) - timedelta(minutes=61)).isoformat()
+        with self.assertRaisesRegex(ValueError, "stale"):
+            PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(checked_at=stale), 60, target_date="2026-10-22")
 
 
 if __name__ == "__main__":

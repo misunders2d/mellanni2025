@@ -33,6 +33,9 @@ from report_storage import require_tmp_artifact_path
 DEFAULT_COMPETITOR_CONFIG = Path(__file__).parents[1] / "report_configs/daily_sales_competitors.json"
 REQUIRED_COMPETITOR_BRANDS = {"Amazon Basics", "Utopia Bedding", "CGK Unlimited", "Bedsure"}
 COMPETITOR_MAX_AGE_MINUTES = 60
+COMPETITOR_SOURCES = {"Keepa product cache", "Keepa deal snapshot (Mellanni MCP)"}
+DEFAULT_PROMOTION_NAMES = Path(__file__).parents[1] / "config/promotion_names.json"
+COLLECTION_ROWS_SHOWN = 8
 
 
 @dataclass
@@ -55,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--deal-calendar", type=Path, help="Google Calendar deal-event JSON; default deal_calendar_status.json")
     p.add_argument("--competitor-check", type=Path, help="Current Keepa competitor snapshot; default competitor_check.json")
     p.add_argument("--competitor-config", type=Path, default=DEFAULT_COMPETITOR_CONFIG, help="Configured representative competitor ASINs")
+    p.add_argument("--promotion-names", type=Path, default=DEFAULT_PROMOTION_NAMES, help="Optional ignored JSON {promotion_id: display name}")
     p.add_argument("--order-summary", type=Path, help="Optional exact order summary CSV with date_pt,sales,units,orders,rows")
     p.add_argument("--sales-api-control", type=Path, help="Optional SP-API Sales API control CSV with date_pt,sales,units,orders")
     p.add_argument("--strict", action="store_true", help="Exit non-zero unless verification status is pass")
@@ -224,6 +228,8 @@ def normalize_orders(path: Path | None, target_date: str, dictionary: pd.DataFra
     group["source"] = label
     order_col = "amazon-order-id" if "amazon-order-id" in df.columns else "amazon_order_id" if "amazon_order_id" in df.columns else None
     orders = int(df[order_col].nunique()) if order_col else None
+    zero_price = df[df["item_price"].eq(0) & df["quantity"].gt(0)]
+    pending_rows = int(df[status_col].eq("Pending").sum()) if status_col else 0
     summary = {
         "date_pt": target_date,
         "sales": round(float(df["item_price"].sum()), 2),
@@ -232,6 +238,9 @@ def normalize_orders(path: Path | None, target_date: str, dictionary: pd.DataFra
         "rows": int(len(df)),
         "source": label,
         "promotions": promos,
+        "zero_price_units": int(zero_price["quantity"].sum()),
+        "zero_price_collections": sorted(zero_price["collection"].unique().tolist()),
+        "pending_rows": pending_rows,
     }
     checks.append(Check(f"{label}_orders_rows", "pass", f"rows={len(df)}, source_rows={before}"))
     return group, summary
@@ -429,6 +438,7 @@ def read_competitor_check(
     checks: list[Check],
     *,
     now_utc: pd.Timestamp | None = None,
+    target_date: str | None = None,
 ) -> list[dict[str, Any]]:
     if not path or not path.is_file():
         checks.append(Check("competitor_check", "fail", "missing competitor_check.json"))
@@ -468,6 +478,7 @@ def read_competitor_check(
         and not missing_brands
         and actual_pairs == expected_pairs
         and len(products) == len(actual_pairs)
+        and (target_date is None or data.get("target_date") == target_date)
     )
     for item in products:
         price = item.get("current_price")
@@ -475,8 +486,8 @@ def read_competitor_check(
         duration_status = item.get("duration_status")
         valid = valid and isinstance(price, (int, float)) and price > 0
         valid = valid and isinstance(deals, list)
-        valid = valid and duration_status in {"not_applicable", "not_exposed_by_keepa", "end_only", "complete"}
-        valid = valid and item.get("source") == "Keepa product cache"
+        valid = valid and duration_status in {"not_applicable", "not_exposed_by_keepa", "end_only", "complete", "ongoing"}
+        valid = valid and item.get("source") in COMPETITOR_SOURCES
         try:
             checked = pd.Timestamp(item["checked_at_utc"])
             if checked.tzinfo is None:
@@ -492,7 +503,8 @@ def read_competitor_check(
     details = (
         f"products={len(products)}, configured={len(expected_pairs)}, "
         f"missing_brands={sorted(missing_brands)}, missing_pairs={missing_pairs}, "
-        f"extra_pairs={extra_pairs}, max_age_minutes={max_age:.1f}"
+        f"extra_pairs={extra_pairs}, max_age_minutes={max_age:.1f}, "
+        f"target_date={data.get('target_date')}"
     )
     checks.append(Check("competitor_check", "pass" if valid else "fail", details))
     return products if valid else []
@@ -535,9 +547,45 @@ def pct_delta(current: float, prior: float) -> float | None:
     return current / prior - 1
 
 
-def render_promotions(target_date: str, prior_date: str, promotions: dict[str, dict[str, Any]]) -> str:
-    sections = ["<h2 style='font-size:20px;margin:20px 0 10px;color:#111827'>Promotion-associated sales</h2>"]
-    sections.append("<p style='font-size:12px;color:#667085'>Ranked by gross sales on tagged items, not entire order baskets. These are associated sales, not incremental lift or proof that a promotion caused purchases. Stacked IDs stay together; no sales are counted twice.</p>")
+CELL = "padding:7px 8px;border:1px solid #e5e7eb"
+HEAD = "padding:7px 8px;border:1px solid #1f2937;background:#1f2937;color:#fff"
+
+
+def short_date(day: str) -> str:
+    try:
+        return datetime.strptime(day, "%Y-%m-%d").strftime("%a %b %-d")
+    except ValueError:
+        return day
+
+
+def clock(value: str | None) -> str:
+    if not value:
+        return ""
+    return pd.Timestamp(value).tz_convert("America/Los_Angeles").strftime("%b %-d %-I:%M %p")
+
+
+def signed_pct(value: float | None) -> str:
+    return "n/a" if value is None else f"{value * 100:+.1f}%"
+
+
+def promotion_label(group: dict[str, Any], names: dict[str, str]) -> str:
+    if group.get("category") != "identified" or not group.get("promotion_ids"):
+        return group["label"]
+    parts = [names.get(pid) or (f"Promo {pid[:8]}" if len(pid) == 36 and pid.count("-") == 4 else pid) for pid in group["promotion_ids"]]
+    return " + ".join(parts) + (" (stacked)" if len(parts) > 1 else "")
+
+
+def plain_sales(promotions: dict[str, Any]) -> float | None:
+    """Sales on lines with no recorded promotion; None when promotion evidence is unverified."""
+    if promotions.get("status") != "pass":
+        return None
+    return next((group["sales"] for group in promotions["groups"] if group.get("label") == "No recorded promotion"), 0.0)
+
+
+def render_promotions(target_date: str, prior_date: str, promotions: dict[str, dict[str, Any]], names: dict[str, str] | None = None) -> str:
+    names = names or {}
+    sections = ["<h2 style='font-size:18px;margin:22px 0 8px;color:#111827'>Promotion-associated sales</h2>"]
+    sections.append("<p style='font-size:12px;color:#667085;margin:0 0 8px'>Ranked by gross sales on tagged items, not entire order baskets. These are associated sales, not incremental lift or proof that a promotion caused purchases. Stacked IDs stay together; no sales are counted twice.</p>")
     for day in (target_date, prior_date):
         item = promotions.get(day, {})
         if item.get("status") != "pass":
@@ -547,7 +595,7 @@ def render_promotions(target_date: str, prior_date: str, promotions: dict[str, d
         identified = [group for group in groups if group["category"] == "identified"]
         controls = [group for group in groups if group["category"] != "identified"]
         totals = item["totals"]
-        sections.append(f"<h3 style='font-size:15px;margin:16px 0 8px'>{escape(day)} PT</h3>")
+        sections.append(f"<h3 style='font-size:14px;margin:14px 0 6px'>{escape(short_date(day))} ({escape(day)}) PT</h3>")
         if not identified:
             sections.append("<p style='font-size:12px'>No identified promotion ranking available; discounted items with blank IDs remain unidentified.</p>")
         elif len(identified) > 10:
@@ -561,16 +609,74 @@ def render_promotions(target_date: str, prior_date: str, promotions: dict[str, d
         rows = []
         for number, group in enumerate(displayed):
             rank = f"#{number + 1} · " if number < min(10, len(identified)) else ""
-            name = escape(rank + group["label"])
-            counts = "".join(f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_int(group[metric])}</td>" for metric in ("units", "orders"))
+            name = escape(rank + promotion_label(group, names))
+            bold = "font-weight:700;" if group["label"].startswith("All items") else ""
+            counts = "".join(f"<td style='{CELL};{bold}text-align:right'>{fmt_int(group[metric])}</td>" for metric in ("units", "orders"))
             discount_pct = fmt_pct(group["item_discount"] / group["sales"]) if group["sales"] > 0 else "—"
-            rows.append(f"<tr><td style='padding:9px;border:1px solid #e5e7eb;overflow-wrap:anywhere;word-break:break-word'>{name}</td>" + counts + "".join(f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right;white-space:nowrap'>{fmt_money(group[metric], 2)}</td>" for metric in ("sales", "item_discount", "net_sales")) + f"<td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{discount_pct}</td></tr>")
-        sections.append("<table width='100%' cellpadding='0' cellspacing='0' style='table-layout:fixed;border-collapse:collapse;font-size:12px'><colgroup><col style='width:34%'><col style='width:6%'><col style='width:8%'><col style='width:13%'><col style='width:13%'><col style='width:13%'><col style='width:13%'></colgroup><tr style='background:#1f2937;color:#fff'>" + "".join(f"<th style='padding:9px;text-align:left;border:1px solid #1f2937'>{heading}</th>" for heading in ("Promotion / control", "Units", "Orders", "Gross item sales", "Item discounts", "Net item sales", "Actual discount %")) + "</tr>" + "".join(rows) + "</table>")
-    sections.append("<p style='font-size:11px;color:#667085'>Actual discount % = item discounts ÷ gross item sales (sales-weighted); zero gross sales is shown as —. Net item sales deduct item discounts only. Unknown IDs are not assumed Lightning Deals. Distinct orders across promo groups are not additive.</p>")
+            money_cells = "".join(f"<td style='{CELL};{bold}text-align:right;white-space:nowrap'>{fmt_money(group[metric], 0)}</td>" for metric in ("sales", "item_discount", "net_sales"))
+            rows.append(f"<tr><td style='{CELL};{bold}overflow-wrap:anywhere;word-break:break-word'>{name}</td>{counts}{money_cells}<td style='{CELL};{bold}text-align:right'>{discount_pct}</td></tr>")
+        headings = "".join(
+            f"<th style='{HEAD};text-align:{align};font-size:10px'>{heading}</th>"
+            for heading, align in (("Promotion", "left"), ("Units", "right"), ("Orders", "right"), ("Gross", "right"), ("Discount", "right"), ("Net", "right"), ("Actual discount %", "right"))
+        )
+        sections.append("<table width='100%' cellpadding='0' cellspacing='0' style='table-layout:fixed;border-collapse:collapse;font-size:11px'><colgroup><col style='width:28%'><col style='width:9%'><col style='width:10%'><col style='width:13%'><col style='width:12%'><col style='width:13%'><col style='width:15%'></colgroup><tr>" + headings + "</tr>" + "".join(rows) + "</table>")
+    sections.append("<p style='font-size:11px;color:#667085'>Actual discount % = item discounts ÷ gross item sales (sales-weighted); zero gross sales is shown as —. Net deducts item discounts only. Unknown IDs are not assumed Lightning Deals. Distinct orders across promo groups are not additive. Full promotion IDs are in promotion_sales.csv.</p>")
     return "\n".join(sections)
 
 
-def render_html(target_date: str, prior_date: str, current: dict[str, Any], prior: dict[str, Any], spend: dict[str, dict[str, Any]], deals: dict[str, dict[str, Any]], competitors: list[dict[str, Any]], comp: pd.DataFrame, promotions: dict[str, dict[str, Any]]) -> str:
+def deal_text(item: dict[str, Any]) -> str:
+    if item["status"] == "Unverified":
+        return "Unverified — report blocked"
+    if item["status"] == "None":
+        return "No Lightning Deal or Best Deal"
+    return "; ".join(f"{event['deal_type']}: {event['name']} ({clock(event['start_pt'])} – {clock(event['end_pt'])})" for event in item["events"])
+
+
+def competitor_deal_text(item: dict[str, Any]) -> str:
+    if item.get("date_deals"):
+        parts = []
+        for deal in item["date_deals"]:
+            window = f"{clock(deal['start'])} – {clock(deal['end'])}, {deal['duration_hours']} h" if deal.get("end") else f"since {clock(deal['start'])}, ongoing"
+            parts.append(f"{deal['badge']} at {fmt_money(deal['deal_price'], 2)} ({window})")
+        return "; ".join(parts)
+    if not item["deals"]:
+        return "No deal"
+    badges = ", ".join(str(deal.get("badge") or deal.get("type")) for deal in item["deals"])
+    kind = "Best/Lightning" if item["best_or_lightning_deal"] else "not Best/Lightning"
+    if item["duration_status"] == "complete":
+        duration = f"{item.get('duration_hours')} h"
+    elif item["duration_status"] == "end_only":
+        duration = f"ends {clock(item.get('deal_end'))}"
+    else:
+        duration = "duration not exposed by Keepa"
+    return f"Active at check: {badges} ({kind}; {duration})"
+
+
+def summary_bullets(target_date: str, prior_date: str, current: dict[str, Any], prior: dict[str, Any], spend: dict[str, dict[str, Any]], deals: dict[str, dict[str, Any]], comp: pd.DataFrame, promotions: dict[str, dict[str, Any]]) -> list[str]:
+    bullets = [
+        f"Sales {fmt_money(current['sales'])} vs {fmt_money(prior['sales'])} on {short_date(prior_date)} ({signed_pct(pct_delta(current['sales'], prior['sales']))}); units {fmt_int(current['units'])} vs {fmt_int(prior['units'])}."
+    ]
+    for day in (target_date, prior_date):
+        if deals[day]["status"] not in {"None", "Unverified"}:
+            bullets.append(f"{short_date(day)} had {deal_text(deals[day])} — headline comparison is not like-for-like.")
+    cur_plain = plain_sales(promotions.get(target_date, {}))
+    pri_plain = plain_sales(promotions.get(prior_date, {}))
+    if cur_plain is not None and pri_plain is not None:
+        bullets.append(f"Like-for-like, sales on lines with no recorded promotion: {fmt_money(cur_plain)} vs {fmt_money(pri_plain)} ({signed_pct(pct_delta(cur_plain, pri_plain))}).")
+    movers = comp.reindex(comp["sales_delta"].abs().sort_values(ascending=False).index).head(2)
+    if not movers.empty:
+        bullets.append("Largest collection moves: " + "; ".join(f"{r['collection']} {('+' if r['sales_delta'] >= 0 else '-')}{fmt_money(abs(r['sales_delta']))} ({signed_pct(None if pd.isna(r['sales_delta_pct']) else float(r['sales_delta_pct']))})" for _, r in movers.iterrows()) + ".")
+    cur_spend, pri_spend = spend[target_date]["spend"], spend[prior_date]["spend"]
+    if current["sales"] > 0 and prior["sales"] > 0:
+        bullets.append(f"PPC spend {fmt_money(cur_spend)} ({signed_pct(pct_delta(cur_spend, pri_spend))}); TACOS {fmt_pct(cur_spend / current['sales'])} ({delta_pp(cur_spend / current['sales'] - pri_spend / prior['sales'])}).")
+    if current.get("rows") and current.get("pending_rows", 0) / current["rows"] >= 0.25:
+        bullets.append(f"{current['pending_rows']} of {current['rows']} order lines are still Pending (vs {prior.get('pending_rows', 0)} of {prior.get('rows', 0)} a week earlier); target-day figures can still change through cancellations.")
+    if current.get("zero_price_units"):
+        bullets.append(f"{current['zero_price_units']} unit(s) recorded at $0.00 item price ({', '.join(current['zero_price_collections'])}) — check for replacements or pricing errors.")
+    return bullets
+
+
+def render_html(target_date: str, prior_date: str, current: dict[str, Any], prior: dict[str, Any], spend: dict[str, dict[str, Any]], deals: dict[str, dict[str, Any]], competitors: list[dict[str, Any]], comp: pd.DataFrame, promotions: dict[str, dict[str, Any]], promotion_names: dict[str, str] | None = None) -> str:
     cur_spend = spend[target_date]["spend"]
     pri_spend = spend[prior_date]["spend"]
     cur_tacos = cur_spend / current["sales"]
@@ -582,107 +688,115 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
     sales_pct = pct_delta(current["sales"], prior["sales"])
     units_pct = pct_delta(current["units"], prior["units"])
     spend_pct = pct_delta(cur_spend, pri_spend)
+    t_label, p_label = short_date(target_date), short_date(prior_date)
     kpis = [
-        ("Sales", fmt_money(current["sales"], 0), f"{delta_money(sales_delta)} vs {prior_date} ({sales_pct * 100:+.1f}%)", color(sales_delta)),
-        ("Units", fmt_int(current["units"]), f"{delta_int(units_delta)} vs {prior_date} ({units_pct * 100:+.1f}%)", color(units_delta)),
-        ("PPC Spend", fmt_money(cur_spend, 0), f"{delta_money(spend_delta)} vs {prior_date} ({spend_pct * 100:+.1f}%)", color(spend_delta, lower_good=True)),
-        ("TACOS", fmt_pct(cur_tacos), f"{delta_pp(tacos_delta)} vs {prior_date}", color(tacos_delta, lower_good=True)),
+        ("Sales", fmt_money(current["sales"], 0), f"{delta_money(sales_delta)} ({signed_pct(sales_pct)})", color(sales_delta)),
+        ("Units", fmt_int(current["units"]), f"{delta_int(units_delta)} ({signed_pct(units_pct)})", color(units_delta)),
+        ("PPC Spend", fmt_money(cur_spend, 0), f"{delta_money(spend_delta)} ({signed_pct(spend_pct)})", color(spend_delta, lower_good=True)),
+        ("TACOS", fmt_pct(cur_tacos), delta_pp(tacos_delta), color(tacos_delta, lower_good=True)),
     ]
-    kpi_html = "".join(
-        f"""
-    <td style='width:25%;vertical-align:top;padding:0 8px 12px 0'>
-      <div style='background:#f8fbff;border:1px solid #dbeafe;border-radius:10px;padding:14px'>
+    cards = [
+        f"""<td style='width:50%;vertical-align:top;padding:0 {'6px' if i % 2 == 0 else '0'} 10px {'0' if i % 2 == 0 else '6px'}'>
+      <div style='background:#f8fbff;border:1px solid #dbeafe;border-radius:10px;padding:12px'>
         <div style='font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#475467;font-weight:700'>{escape(label)}</div>
-        <div style='font-size:24px;font-weight:800;margin:7px 0;color:#111827'>{escape(value)}</div>
-        <div style='font-size:13px;color:{line_color};font-weight:700'>{escape(line)}</div>
+        <div style='font-size:22px;font-weight:800;margin:5px 0;color:#111827'>{escape(value)}</div>
+        <div style='font-size:12px;color:{line_color};font-weight:700'>{escape(line)} vs {escape(p_label)}</div>
       </div>
-    </td>""" for label, value, line, line_color in kpis
-    )
-    def deal_text(day: str) -> str:
-        item = deals[day]
-        if item["status"] == "Unverified":
-            return "Unverified — report blocked"
-        if item["status"] == "None":
-            return "No Lightning Deal or Best Deal"
-        return "; ".join(f"{event['deal_type']}: {event['name']}" for event in item["events"])
+    </td>""" for i, (label, value, line, line_color) in enumerate(kpis)
+    ]
+    kpi_rows = f"<tr>{cards[0]}{cards[1]}</tr><tr>{cards[2]}{cards[3]}</tr>"
+    bullets = "".join(f"<li style='margin:0 0 5px'>{escape(text)}</li>" for text in summary_bullets(target_date, prior_date, current, prior, spend, deals, comp, promotions))
+    cur_plain = plain_sales(promotions.get(target_date, {}))
+    pri_plain = plain_sales(promotions.get(prior_date, {}))
 
+    def metric_row(label: str, cur: str, pri: str, change: str, change_color: str, note: str = "") -> str:
+        note_html = f"<br><span style='font-size:11px;color:#667085;font-weight:400'>{escape(note)}</span>" if note else ""
+        return f"<tr><td style='{CELL};font-weight:700'>{escape(label)}{note_html}</td><td style='{CELL};text-align:right'>{cur}</td><td style='{CELL};text-align:right'>{pri}</td><td style='{CELL};text-align:right;color:{change_color};font-weight:700;white-space:nowrap'>{change}</td></tr>"
+
+    exec_rows = "".join([
+        metric_row("Sales", fmt_money(current["sales"], 0), fmt_money(prior["sales"], 0), f"{delta_money(sales_delta)}<br>{signed_pct(sales_pct)}", color(sales_delta)),
+        metric_row("Sales, no recorded promo", fmt_money(cur_plain, 0), fmt_money(pri_plain, 0), f"{delta_money(cur_plain - pri_plain)}<br>{signed_pct(pct_delta(cur_plain, pri_plain))}", color(cur_plain - pri_plain), "like-for-like")
+        if cur_plain is not None and pri_plain is not None else "",
+        metric_row("Units", fmt_int(current["units"]), fmt_int(prior["units"]), f"{delta_int(units_delta)}<br>{signed_pct(units_pct)}", color(units_delta)),
+        metric_row("PPC Spend", fmt_money(cur_spend, 0), fmt_money(pri_spend, 0), f"{delta_money(spend_delta)}<br>{signed_pct(spend_pct)}", color(spend_delta, lower_good=True)),
+        metric_row("TACOS", fmt_pct(cur_tacos), fmt_pct(pri_tacos), delta_pp(tacos_delta), color(tacos_delta, lower_good=True)),
+    ])
     deal_rows = "".join(
-        f"<tr><td style='padding:9px;border:1px solid #e5e7eb;font-weight:700'>{day}</td><td style='padding:9px;border:1px solid #e5e7eb'>{escape(deal_text(day))}</td></tr>"
+        f"<tr><td style='{CELL};font-weight:700;white-space:nowrap'>{escape(short_date(day))}</td><td style='{CELL}'>{escape(deal_text(deals[day]))}</td></tr>"
         for day in [target_date, prior_date]
     )
     competitor_rows = []
     for item in competitors:
-        deal_badges = ", ".join(str(deal.get("badge") or deal.get("type")) for deal in item["deals"]) or "None"
-        if item["duration_status"] == "not_applicable":
-            duration = "n/a"
-        elif item["duration_status"] == "not_exposed_by_keepa":
-            duration = "Not exposed by Keepa"
-        elif item["duration_status"] == "end_only":
-            duration = f"Ends {item.get('deal_end')}; start unavailable"
-        else:
-            duration = f"{item.get('duration_hours')} hours"
-        source_label = str(item["current_price_source"]).replace("_", " ").title()
+        price_notes = [str(item["current_price_source"]).replace("_", " ").title()]
+        if item.get("list_price"):
+            price_notes.append(f"list {fmt_money(item['list_price'], 2)}")
+        if item.get("coupon"):
+            price_notes.append(f"coupon {item['coupon']}")
         competitor_rows.append(f"""
       <tr>
-        <td style='padding:9px;border:1px solid #e5e7eb;font-weight:700'>{escape(str(item['brand']))}<br><span style='font-size:11px;color:#667085'>{escape(str(item['asin']))}</span></td>
-        <td style='padding:9px;border:1px solid #e5e7eb'>{escape(str(item['label']))}</td>
-        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right;font-weight:700'>{fmt_money(item['current_price'], 2)}<br><span style='font-size:11px;color:#667085'>{escape(source_label)}</span></td>
-        <td style='padding:9px;border:1px solid #e5e7eb'>{escape(deal_badges)}</td>
-        <td style='padding:9px;border:1px solid #e5e7eb;text-align:center'>{'Yes' if item['best_or_lightning_deal'] else 'No'}</td>
-        <td style='padding:9px;border:1px solid #e5e7eb'>{escape(duration)}</td>
+        <td style='{CELL}'><b>{escape(str(item['brand']))}</b><br><span style='font-size:11px;color:#667085'>{escape(str(item['label']))} · {escape(str(item['asin']))}</span></td>
+        <td style='{CELL};text-align:right'><b>{fmt_money(item['current_price'], 2)}</b><br><span style='font-size:11px;color:#667085'>{escape(' · '.join(price_notes))}</span></td>
+        <td style='{CELL}'>{escape(competitor_deal_text(item))}</td>
       </tr>""")
-    render = comp.sort_values(["current_sales", "prior_sales"], ascending=[False, False])
-    max_sales = max(float(render["current_sales"].max() or 0), float(render["prior_sales"].max() or 0), 1.0)
-    rows = []
-    for _, r in render.iterrows():
-        d = float(r["sales_delta"])
-        pdlt = r.get("sales_delta_pct")
-        pct_s = "n/a" if pd.isna(pdlt) else f"{float(pdlt) * 100:+.1f}%"
-        cw = max(2, min(100, float(r["current_sales"]) / max_sales * 100))
-        pw = max(2, min(100, float(r["prior_sales"]) / max_sales * 100))
-        rows.append(f"""
+    ordered = comp.reindex(comp["sales_delta"].abs().sort_values(ascending=False).index)
+    shown, rest = ordered.head(COLLECTION_ROWS_SHOWN), ordered.iloc[COLLECTION_ROWS_SHOWN:]
+    max_sales = max(float(comp["current_sales"].max() or 0), float(comp["prior_sales"].max() or 0), 1.0)
+
+    def collection_row(name: str, cur_sales: float, cur_units: float, pri_sales: float, pri_units: float, bars: bool = True) -> str:
+        d = cur_sales - pri_sales
+        bar_html = ""
+        if bars:
+            cw = max(1, min(100, cur_sales / max_sales * 100))
+            pw = max(1, min(100, pri_sales / max_sales * 100))
+            bar_html = (f"<div style='margin-top:5px;background:#eef2ff;height:6px;border-radius:4px;overflow:hidden'><div style='width:{cw:.1f}%;background:#2563eb;height:6px'></div></div>"
+                        f"<div style='margin-top:2px;background:#f1f5f9;height:6px;border-radius:4px;overflow:hidden'><div style='width:{pw:.1f}%;background:#94a3b8;height:6px'></div></div>")
+        return f"""
       <tr>
-        <td style='padding:9px;border:1px solid #e5e7eb;font-weight:700'>{escape(str(r['collection']))}</td>
-        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['current_sales'], 2)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['current_units'])} units</span></td>
-        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right'>{fmt_money(r['prior_sales'], 2)}<br><span style='font-size:11px;color:#667085'>{fmt_int(r['prior_units'])} units</span></td>
-        <td style='padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(d)};font-weight:700'>{('+' if d >= 0 else '-') + fmt_money(abs(d), 2)}<br><span style='font-size:11px'>{pct_s}</span></td>
-        <td style='padding:9px;border:1px solid #e5e7eb;min-width:170px'>
-          <div style='font-size:11px;color:#667085;margin-bottom:3px'>Current</div><div style='background:#dbeafe;height:10px;border-radius:8px;overflow:hidden'><div style='width:{cw:.1f}%;background:#2563eb;height:10px'></div></div>
-          <div style='font-size:11px;color:#667085;margin:5px 0 3px'>Prior</div><div style='background:#fee2e2;height:10px;border-radius:8px;overflow:hidden'><div style='width:{pw:.1f}%;background:#ef4444;height:10px'></div></div>
-        </td>
-      </tr>""")
+        <td style='{CELL};font-weight:700'>{escape(name)}{bar_html}</td>
+        <td style='{CELL};text-align:right;white-space:nowrap'>{fmt_money(cur_sales, 0)}<br><span style='font-size:11px;color:#667085'>{fmt_int(cur_units)} u</span></td>
+        <td style='{CELL};text-align:right;white-space:nowrap'>{fmt_money(pri_sales, 0)}<br><span style='font-size:11px;color:#667085'>{fmt_int(pri_units)} u</span></td>
+        <td style='{CELL};text-align:right;color:{color(d)};font-weight:700;white-space:nowrap'>{('+' if d >= 0 else '-') + fmt_money(abs(d), 0)}<br><span style='font-size:11px'>{signed_pct(pct_delta(cur_sales, pri_sales))}</span></td>
+      </tr>"""
+
+    rows = [collection_row(str(r["collection"]), float(r["current_sales"]), float(r["current_units"]), float(r["prior_sales"]), float(r["prior_units"])) for _, r in shown.iterrows()]
+    if not rest.empty:
+        rows.append(collection_row(f"Other {len(rest)} collections", float(rest["current_sales"].sum()), float(rest["current_units"].sum()), float(rest["prior_sales"].sum()), float(rest["prior_units"].sum()), bars=False))
+    rows.append(collection_row("Total", float(comp["current_sales"].sum()), float(comp["current_units"].sum()), float(comp["prior_sales"].sum()), float(comp["prior_units"].sum()), bars=False))
+    th = f"style='{HEAD};text-align:right;white-space:nowrap'"
     return f"""
 <meta charset="utf-8">
-<div style="font-family:Arial,Helvetica,sans-serif;color:#242424;max-width:980px;margin:0 auto;background:#fff">
-  <div style="background:#111827;color:#fff;padding:24px 26px;margin-bottom:14px">
-    <h1 style="margin:0 0 8px;font-size:26px;line-height:1.2">Mellanni Daily Sales Report</h1>
-    <div style="font-size:13px;color:#dbe4f0">{target_date} PT · Compared to same weekday last week ({prior_date})</div>
+<div style="font-family:Arial,Helvetica,sans-serif;color:#242424;max-width:760px;margin:0 auto;background:#fff;font-size:13px;line-height:1.4">
+  <div style="background:#111827;color:#fff;padding:20px 22px;margin-bottom:12px">
+    <h1 style="margin:0 0 6px;font-size:23px;line-height:1.2">Mellanni Daily Sales Report</h1>
+    <div style="font-size:13px;color:#dbe4f0">{escape(t_label)} ({target_date}) PT · vs {escape(p_label)} ({prior_date})</div>
   </div>
-  <div style="border-left:4px solid #f97316;background:#fff7ed;padding:11px 14px;margin:0 0 20px;font-weight:700">Prepared by Sergey's AI helper.</div>
-  <h2 style="font-size:20px;margin:18px 0 10px;color:#111827">Executive snapshot</h2>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:8px"><tr>{kpi_html}</tr></table>
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:14px 0 18px;font-size:13px">
-    <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Metric</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{target_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{prior_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">Change</th></tr>
-    <tr><td style="padding:9px;border:1px solid #e5e7eb;font-weight:700">Sales</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_money(current['sales'], 2)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_money(prior['sales'], 2)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(sales_delta)};font-weight:700">{delta_money(sales_delta)} ({sales_pct * 100:+.1f}%)</td></tr>
-    <tr><td style="padding:9px;border:1px solid #e5e7eb;font-weight:700">Units</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_int(current['units'])}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_int(prior['units'])}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(units_delta)};font-weight:700">{delta_int(units_delta)} ({units_pct * 100:+.1f}%)</td></tr>
-    <tr><td style="padding:9px;border:1px solid #e5e7eb;font-weight:700">PPC Spend</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_money(cur_spend, 2)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_money(pri_spend, 2)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(spend_delta, lower_good=True)};font-weight:700">{delta_money(spend_delta)} ({spend_pct * 100:+.1f}%)</td></tr>
-    <tr><td style="padding:9px;border:1px solid #e5e7eb;font-weight:700">TACOS</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_pct(cur_tacos)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right">{fmt_pct(pri_tacos)}</td><td style="padding:9px;border:1px solid #e5e7eb;text-align:right;color:{color(tacos_delta, lower_good=True)};font-weight:700">{delta_pp(tacos_delta)}</td></tr>
+  <div style="border-left:4px solid #f97316;background:#fff7ed;padding:10px 14px;margin:0 0 14px;font-weight:700">Prepared by Sergey's AI helper.</div>
+  <h2 style="font-size:18px;margin:14px 0 6px;color:#111827">What happened</h2>
+  <ul style="margin:0 0 12px;padding-left:20px">{bullets}</ul>
+  <h2 style="font-size:18px;margin:16px 0 8px;color:#111827">Executive snapshot</h2>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:4px">{kpi_rows}</table>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:8px 0 16px;font-size:13px">
+    <tr><th style="{HEAD};text-align:left">Metric</th><th {th}>{escape(t_label)}</th><th {th}>{escape(p_label)}</th><th {th}>Change</th></tr>
+    {exec_rows}
   </table>
-  <h2 style="font-size:20px;margin:20px 0 10px;color:#111827">Deal calendar check</h2>
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:18px;font-size:13px">
-    <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Pacific date</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Lightning / Best Deal</th></tr>
+  <h2 style="font-size:18px;margin:20px 0 8px;color:#111827">Deal calendar check</h2>
+  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:16px;font-size:13px">
+    <tr><th style="{HEAD};text-align:left;width:28%">Pacific date</th><th style="{HEAD};text-align:left">Lightning / Best Deal</th></tr>
     {deal_rows}
   </table>
-  <h2 style="font-size:20px;margin:20px 0 10px;color:#111827">Competitor price and deal check</h2>
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:18px;font-size:13px">
-    <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Brand / ASIN</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Representative product</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">Current price</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Active deal badge</th><th style="padding:9px;text-align:center;border:1px solid #1f2937">Best / Lightning</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Duration</th></tr>
+  <h2 style="font-size:18px;margin:20px 0 8px;color:#111827">Competitor price and deal check</h2>
+  <table width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;border-collapse:collapse;margin-bottom:6px;font-size:12px">
+    <colgroup><col style="width:38%"><col style="width:22%"><col style="width:40%"></colgroup>
+    <tr><th style="{HEAD};text-align:left">Competitor</th><th style="{HEAD};text-align:right">Price now</th><th style="{HEAD};text-align:left">Deal on {escape(t_label)}</th></tr>
     {''.join(competitor_rows)}
   </table>
-  <p style="font-size:11px;color:#64748b;margin:-10px 0 18px">Current consumer price and deal badge from fresh Keepa evidence. Keepa does not always expose deal start/end times; unavailable duration is stated rather than inferred.</p>
-  {render_promotions(target_date, prior_date, promotions)}
-  <h2 style="font-size:20px;margin:20px 0 10px;color:#111827">Collection breakdown</h2>
-  <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">
-    <tr style="background:#1f2937;color:#fff"><th style="padding:9px;text-align:left;border:1px solid #1f2937">Collection</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{target_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">{prior_date}</th><th style="padding:9px;text-align:right;border:1px solid #1f2937">Sales change</th><th style="padding:9px;text-align:left;border:1px solid #1f2937">Visual</th></tr>
+  <p style="font-size:11px;color:#64748b;margin:0 0 16px">Live price and badges from fresh Keepa evidence. Lightning Deal and Prime Exclusive windows on the date come from Keepa price history, including deals that already ended; Best Deal history is not available, and missing durations are stated rather than inferred.</p>
+  {render_promotions(target_date, prior_date, promotions, promotion_names)}
+  <h2 style="font-size:18px;margin:22px 0 8px;color:#111827">Collection breakdown</h2>
+  <p style="font-size:12px;color:#667085;margin:0 0 6px">Top {COLLECTION_ROWS_SHOWN} collections by absolute sales change; bars show {escape(t_label)} (blue) and {escape(p_label)} (gray) on one scale. Full list in collection_comparison.csv.</p>
+  <table width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;border-collapse:collapse;font-size:12px">
+    <colgroup><col style="width:46%"><col style="width:18%"><col style="width:18%"><col style="width:18%"></colgroup>
+    <tr><th style="{HEAD};text-align:left">Collection</th><th {th}>{escape(t_label)}</th><th {th}>{escape(p_label)}</th><th {th}>Change</th></tr>
     {''.join(rows)}
   </table>
   <p style="font-size:12px;color:#667085;margin-top:14px">TACOS = PPC spend ÷ total sales. Source notes are recorded in the verification JSON.</p>
@@ -747,7 +861,7 @@ def main() -> int:
     deal_path = resolve_default(report_dir, args.deal_calendar, ["deal_calendar_status.json"])
     deals = read_deal_calendar(deal_path, [target_date, prior_date], checks)
     competitor_path = resolve_default(report_dir, args.competitor_check, ["competitor_check.json"])
-    competitors = read_competitor_check(competitor_path, args.competitor_config, checks)
+    competitors = read_competitor_check(competitor_path, args.competitor_config, checks, target_date=target_date)
 
     if current_summary["sales"] <= 0:
         checks.append(Check("target_sales_nonzero", "fail", "target sales are zero; TACOS undefined"))
@@ -775,7 +889,8 @@ def main() -> int:
     comp.to_csv(comp_path, index=False)
 
     subject = f"{target_date} results: {fmt_int(current_summary['units'])} units, {fmt_money(current_summary['sales'], 0)} sales, PPC Spend = {fmt_money(spend[target_date]['spend'], 0)} with {fmt_pct(spend[target_date]['spend'] / current_summary['sales'])} TACOS"
-    html_body = render_html(target_date, prior_date, current_summary, prior_summary, spend, deals, competitors, comp, promotions)
+    promotion_names = json.loads(args.promotion_names.read_text(encoding="utf-8")) if args.promotion_names and args.promotion_names.is_file() else {}
+    html_body = render_html(target_date, prior_date, current_summary, prior_summary, spend, deals, competitors, comp, promotions, promotion_names)
     html_path = report_dir / f"email_body_{target_date}.html"
     subject_path = report_dir / f"email_subject_{target_date}.txt"
     verification_path = report_dir / f"verification_{target_date}.json"
