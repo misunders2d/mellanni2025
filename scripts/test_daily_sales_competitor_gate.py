@@ -265,10 +265,12 @@ class DailyCompetitorGateTest(unittest.TestCase):
 
     def test_report_rejects_snapshot_prepared_for_another_date(self) -> None:
         path = self.root / "competitor_check.json"
-        snapshot = PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(), 60, target_date="2026-10-22")
+        checked_at = "2026-10-22T18:00:00+00:00"
+        now_ts = datetime.fromisoformat(checked_at).timestamp()
+        snapshot = PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(checked_at=checked_at), 60, target_date="2026-10-22", now=now_ts)
         path.write_text(json.dumps(snapshot), encoding="utf-8")
         checks = []
-        self.assertEqual(REPORT.read_competitor_check(path, self.config_path, checks, target_date="2026-10-23"), [])
+        self.assertEqual(REPORT.read_competitor_check(path, self.config_path, checks, now_utc=REPORT.pd.Timestamp(checked_at), target_date="2026-10-23"), [])
         self.assertEqual(checks[-1].status, "fail")
 
     def mcp_payload(self, *, checked_at: str | None = None) -> dict:
@@ -287,7 +289,9 @@ class DailyCompetitorGateTest(unittest.TestCase):
         return {"status": "success", "date_pt": "2026-10-22", "products": products}
 
     def test_mcp_snapshot_builds_report_ready_products(self) -> None:
-        snapshot = PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(), 60, target_date="2026-10-22")
+        checked_at = "2026-10-22T18:00:00+00:00"
+        now_ts = datetime.fromisoformat(checked_at).timestamp()
+        snapshot = PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(checked_at=checked_at), 60, target_date="2026-10-22", now=now_ts)
         by_brand = {item["brand"]: item for item in snapshot["products"]}
         self.assertTrue(by_brand["CGK Unlimited"]["best_or_lightning_deal"])
         self.assertEqual(by_brand["CGK Unlimited"]["duration_status"], "complete")
@@ -297,15 +301,94 @@ class DailyCompetitorGateTest(unittest.TestCase):
         path = self.root / "competitor_check.json"
         path.write_text(json.dumps(snapshot), encoding="utf-8")
         checks = []
-        self.assertEqual(len(REPORT.read_competitor_check(path, self.config_path, checks)), 4)
+        self.assertEqual(len(REPORT.read_competitor_check(path, self.config_path, checks, now_utc=REPORT.pd.Timestamp(checked_at))), 4)
         self.assertEqual(checks[-1].status, "pass")
 
     def test_mcp_snapshot_rejects_wrong_date_and_stale_evidence(self) -> None:
         with self.assertRaisesRegex(ValueError, "2026-10-21"):
             PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(), 60, target_date="2026-10-21")
-        stale = (datetime.now(timezone.utc) - timedelta(minutes=61)).isoformat()
+        now_ts = datetime.fromisoformat("2026-10-22T18:00:00+00:00").timestamp()
+        stale = "2026-10-22T16:59:00+00:00"
         with self.assertRaisesRegex(ValueError, "stale"):
-            PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(checked_at=stale), 60, target_date="2026-10-22")
+            PREP.build_snapshot_from_mcp(self.config, self.mcp_payload(checked_at=stale), 60, target_date="2026-10-22", now=now_ts)
+
+    def test_mcp_snapshot_requires_history_for_past_target_date(self) -> None:
+        checked_at = "2026-11-19T11:22:00+00:00"
+        now_ts = datetime.fromisoformat(checked_at).timestamp()
+        payload = self.mcp_payload(checked_at=checked_at)
+        payload["date_pt"] = "2026-11-18"
+        with self.assertRaisesRegex(ValueError, "--mcp-history"):
+            PREP.build_snapshot_from_mcp(self.config, payload, 60, target_date="2026-11-18", now=now_ts)
+
+    def test_report_blocks_d_plus_1_snapshot_without_target_date_price(self) -> None:
+        checked_at = "2026-11-19T11:22:00+00:00"
+        same_day = "2026-11-18T18:00:00+00:00"
+        snap = PREP.build_snapshot_from_mcp(
+            self.config,
+            {**self.mcp_payload(checked_at=same_day), "date_pt": "2026-11-18"},
+            60,
+            target_date="2026-11-18",
+            now=datetime.fromisoformat(same_day).timestamp(),
+        )
+        for p in snap["products"]:
+            p["checked_at_utc"] = checked_at
+        path = self.root / "competitor_check.json"
+        path.write_text(json.dumps(snap), encoding="utf-8")
+        checks = []
+        self.assertEqual(REPORT.read_competitor_check(path, self.config_path, checks, now_utc=REPORT.pd.Timestamp(checked_at), target_date="2026-11-18"), [])
+        self.assertEqual(checks[-1].status, "fail")
+
+    def test_mcp_history_isolates_target_date_prices_and_separates_d_plus_1_deals(self) -> None:
+        checked = "2026-11-19T11:22:00+00:00"
+        now_ts = datetime.fromisoformat(checked).timestamp()
+        payload = {
+            "status": "success",
+            "date_pt": "2026-11-18",
+            "products": [
+                {"asin": "B00Q7OARO2", "brand": "Amazon Basics", "title": "Amazon set", "current_price": 15.22,
+                 "current_price_source": "buy_box", "list_price": 18.99, "coupon": None,
+                 "active_deals": [], "date_deals": [], "checked_at_utc": checked},
+                {"asin": "B00NX0WXQI", "brand": "Utopia Bedding", "title": "Utopia set", "current_price": 17.99,
+                 "current_price_source": "buy_box", "list_price": 29.99, "coupon": None,
+                 "active_deals": [], "date_deals": [], "checked_at_utc": checked},
+                {"asin": "B01M16WBW1", "brand": "CGK Unlimited", "title": "CGK set", "current_price": 17.49,
+                 "current_price_source": "buy_box", "list_price": 39.99, "coupon": None,
+                 "active_deals": [{"type": "SPECIAL_EVENT_SALE", "badge": "Black Friday Deal", "access": "ALL", "start": None, "end": None}],
+                 "date_deals": [], "checked_at_utc": checked},
+                {"asin": "B07P5NBRL5", "brand": "Bedsure", "title": "Bedsure set", "current_price": 13.67,
+                 "current_price_source": "buy_box", "list_price": 19.99, "coupon": None,
+                 "active_deals": [{"type": "SPECIAL_EVENT_SALE", "badge": "Black Friday Deal", "access": "ALL", "start": None, "end": None}],
+                 "date_deals": [], "checked_at_utc": checked},
+            ],
+        }
+        history = {
+            "B00Q7OARO2": {"buy_box": {"status": "success", "history": [{"date": "2026-11-09T00:31:00+00:00", "price": 15.22, "carried_forward": True}]}},
+            "B00NX0WXQI": {"buy_box": {"status": "success", "history": [{"date": "2026-11-03T04:49:00+00:00", "price": 17.99, "carried_forward": True}]}},
+            "B01M16WBW1": {"buy_box": {"status": "success", "history": [
+                {"date": "2026-08-29T07:27:00+00:00", "price": 24.99, "carried_forward": True},
+                {"date": "2026-11-19T08:22:00+00:00", "price": 17.49, "carried_forward": False},
+            ]}},
+            "B07P5NBRL5": {"buy_box": {"status": "success", "history": [
+                {"date": "2026-11-10T10:23:00+00:00", "price": 16.99, "carried_forward": True},
+                {"date": "2026-11-19T07:17:00+00:00", "price": 19.99, "carried_forward": False},
+            ]}},
+        }
+        snapshot = PREP.build_snapshot_from_mcp(self.config, payload, 60, target_date="2026-11-18", now=now_ts, mcp_history=history)
+        by_brand = {item["brand"]: item for item in snapshot["products"]}
+        self.assertEqual(by_brand["CGK Unlimited"]["target_date_price"], 24.99)
+        self.assertEqual(by_brand["Bedsure"]["target_date_price"], 16.99)
+        self.assertEqual(by_brand["Bedsure"]["target_date_price_end"], 19.99)
+
+        cgk_price, cgk_notes = REPORT.competitor_price_cell(by_brand["CGK Unlimited"], "2026-11-18")
+        beds_price, beds_notes = REPORT.competitor_price_cell(by_brand["Bedsure"], "2026-11-18")
+        self.assertEqual(cgk_price, "$24.99")
+        self.assertEqual(beds_price, "$16.99 → $19.99")
+        self.assertTrue(any("At Thu Nov 19 check: $17.49" in note for note in cgk_notes))
+        self.assertTrue(any("$19.99 from Nov 18 11:17 PM" in note for note in beds_notes))
+
+        cgk_deal = REPORT.competitor_deal_text(by_brand["CGK Unlimited"], "2026-11-18")
+        self.assertTrue(cgk_deal.startswith("No Lightning/Prime deal on Wed Nov 18"))
+        self.assertNotIn("Active at check", cgk_deal)
 
 
 if __name__ == "__main__":

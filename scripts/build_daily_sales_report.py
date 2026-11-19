@@ -482,9 +482,15 @@ def read_competitor_check(
     )
     for item in products:
         price = item.get("current_price")
+        target_price = item.get("target_date_price")
         deals = item.get("deals")
         duration_status = item.get("duration_status")
         valid = valid and isinstance(price, (int, float)) and price > 0
+        checked_pt = checked_pt_date(item)
+        if target_date and checked_pt and checked_pt != target_date:
+            valid = valid and isinstance(target_price, (int, float)) and target_price > 0
+        else:
+            valid = valid and (target_price is None or (isinstance(target_price, (int, float)) and target_price > 0))
         valid = valid and isinstance(deals, list)
         valid = valid and duration_status in {"not_applicable", "not_exposed_by_keepa", "end_only", "complete", "ongoing"}
         valid = valid and item.get("source") in COMPETITOR_SOURCES
@@ -632,7 +638,45 @@ def deal_text(item: dict[str, Any]) -> str:
     return "; ".join(f"{event['deal_type']}: {event['name']} ({clock(event['start_pt'])} – {clock(event['end_pt'])})" for event in item["events"])
 
 
-def competitor_deal_text(item: dict[str, Any]) -> str:
+def checked_pt_date(item: dict[str, Any]) -> str | None:
+    raw = item.get("checked_at_utc")
+    if not raw:
+        return None
+    try:
+        return pd.Timestamp(raw).tz_convert("America/Los_Angeles").date().isoformat()
+    except Exception:
+        return None
+
+
+def competitor_price_cell(item: dict[str, Any], target_date: str) -> tuple[str, list[str]]:
+    if item.get("target_date_price") is None:
+        notes = [str(item["current_price_source"]).replace("_", " ").title()]
+        if item.get("list_price"):
+            notes.append(f"list {fmt_money(item['list_price'], 2)}")
+        if item.get("coupon"):
+            notes.append(f"coupon {item['coupon']}")
+        return fmt_money(item["current_price"], 2), notes
+
+    points = item.get("target_date_price_points") or []
+    prices = [float(point["price"]) for point in points if isinstance(point.get("price"), (int, float))] or [float(item["target_date_price"])]
+    headline = f"{fmt_money(prices[0], 2)} → {fmt_money(prices[-1], 2)}" if len(prices) >= 2 else fmt_money(prices[0], 2)
+    src = str(item.get("target_date_price_source") or item.get("current_price_source") or "buy_box").replace("_", " ").title()
+    notes = [src]
+    if len(points) >= 2:
+        changed = points[-1]
+        notes.append(f"{fmt_money(changed['price'], 2)} from {clock(changed.get('time_pt'))}")
+    if item.get("list_price"):
+        notes.append(f"list {fmt_money(item['list_price'], 2)}")
+    if item.get("target_date_coupon"):
+        notes.append(f"coupon {item['target_date_coupon']}")
+    checked_pt = checked_pt_date(item)
+    end_price = float(item.get("target_date_price_end") or prices[-1])
+    if checked_pt and checked_pt != target_date and round(float(item["current_price"]), 2) != round(end_price, 2):
+        notes.append(f"At {short_date(checked_pt)} check: {fmt_money(item['current_price'], 2)}")
+    return headline, notes
+
+
+def competitor_deal_text(item: dict[str, Any], target_date: str | None = None) -> str:
     if item.get("date_deals"):
         parts = []
         for deal in item["date_deals"]:
@@ -649,6 +693,9 @@ def competitor_deal_text(item: dict[str, Any]) -> str:
         duration = f"ends {clock(item.get('deal_end'))}"
     else:
         duration = "duration not exposed by Keepa"
+    checked_pt = checked_pt_date(item)
+    if target_date and checked_pt and checked_pt != target_date:
+        return f"No Lightning/Prime deal on {short_date(target_date)} (Live {short_date(checked_pt)} check: {badges}; {kind}; {duration})"
     return f"Active at check: {badges} ({kind}; {duration})"
 
 
@@ -725,18 +772,16 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
         f"<tr><td style='{CELL};font-weight:700;white-space:nowrap'>{escape(short_date(day))}</td><td style='{CELL}'>{escape(deal_text(deals[day]))}</td></tr>"
         for day in [target_date, prior_date]
     )
+    has_target_prices = any(item.get("target_date_price") is not None for item in competitors)
+    price_heading = f"Price on {t_label}" if has_target_prices else "Price now"
     competitor_rows = []
     for item in competitors:
-        price_notes = [str(item["current_price_source"]).replace("_", " ").title()]
-        if item.get("list_price"):
-            price_notes.append(f"list {fmt_money(item['list_price'], 2)}")
-        if item.get("coupon"):
-            price_notes.append(f"coupon {item['coupon']}")
+        price_main, price_notes = competitor_price_cell(item, target_date)
         competitor_rows.append(f"""
       <tr>
         <td style='{CELL}'><b>{escape(str(item['brand']))}</b><br><span style='font-size:11px;color:#667085'>{escape(str(item['label']))} · {escape(str(item['asin']))}</span></td>
-        <td style='{CELL};text-align:right'><b>{fmt_money(item['current_price'], 2)}</b><br><span style='font-size:11px;color:#667085'>{escape(' · '.join(price_notes))}</span></td>
-        <td style='{CELL}'>{escape(competitor_deal_text(item))}</td>
+        <td style='{CELL};text-align:right'><b>{escape(price_main)}</b><br><span style='font-size:11px;color:#667085'>{escape(' · '.join(price_notes))}</span></td>
+        <td style='{CELL}'>{escape(competitor_deal_text(item, target_date))}</td>
       </tr>""")
     ordered = comp.reindex(comp["sales_delta"].abs().sort_values(ascending=False).index)
     shown, rest = ordered.head(COLLECTION_ROWS_SHOWN), ordered.iloc[COLLECTION_ROWS_SHOWN:]
@@ -787,10 +832,10 @@ def render_html(target_date: str, prior_date: str, current: dict[str, Any], prio
   <h2 style="font-size:18px;margin:20px 0 8px;color:#111827">Competitor price and deal check</h2>
   <table width="100%" cellpadding="0" cellspacing="0" style="table-layout:fixed;border-collapse:collapse;margin-bottom:6px;font-size:12px">
     <colgroup><col style="width:38%"><col style="width:22%"><col style="width:40%"></colgroup>
-    <tr><th style="{HEAD};text-align:left">Competitor</th><th style="{HEAD};text-align:right">Price now</th><th style="{HEAD};text-align:left">Deal on {escape(t_label)}</th></tr>
+    <tr><th style="{HEAD};text-align:left">Competitor</th><th style="{HEAD};text-align:right">{escape(price_heading)}</th><th style="{HEAD};text-align:left">Deal on {escape(t_label)}</th></tr>
     {''.join(competitor_rows)}
   </table>
-  <p style="font-size:11px;color:#64748b;margin:0 0 16px">Live price and badges from fresh Keepa evidence. Lightning Deal and Prime Exclusive windows on the date come from Keepa price history, including deals that already ended; Best Deal history is not available, and missing durations are stated rather than inferred.</p>
+  <p style="font-size:11px;color:#64748b;margin:0 0 16px">Target-date prices and Lightning Deal / Prime Exclusive windows come from Keepa price history on the reporting date (Pacific), including deals that already ended. Best Deal and non-flash badge history is not exposed by Keepa, so check-time badges on a later date are labeled by their check date rather than back-dated.</p>
   {render_promotions(target_date, prior_date, promotions, promotion_names)}
   <h2 style="font-size:18px;margin:22px 0 8px;color:#111827">Collection breakdown</h2>
   <p style="font-size:12px;color:#667085;margin:0 0 6px">Top {COLLECTION_ROWS_SHOWN} collections by absolute sales change; bars show {escape(t_label)} (blue) and {escape(p_label)} (gray) on one scale. Full list in collection_comparison.csv.</p>
