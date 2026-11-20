@@ -630,12 +630,34 @@ def render_promotions(target_date: str, prior_date: str, promotions: dict[str, d
     return "\n".join(sections)
 
 
+def _strip_shared_tag(names: list[str]) -> list[str]:
+    if len(names) < 2 or not all(name.endswith(")") and " (" in name for name in names):
+        return names
+    tags = {name.rsplit(" (", 1)[1][:-1] for name in names}
+    if len(tags) != 1:
+        return names
+    stripped = [name.rsplit(" (", 1)[0].strip() for name in names]
+    return stripped if all(stripped) else names
+
+
 def deal_text(item: dict[str, Any]) -> str:
     if item["status"] == "Unverified":
         return "Unverified — report blocked"
     if item["status"] == "None":
         return "No Lightning Deal or Best Deal"
-    return "; ".join(f"{event['deal_type']}: {event['name']} ({clock(event['start_pt'])} – {clock(event['end_pt'])})" for event in item["events"])
+    groups: dict[tuple[str, str, str], list[str]] = {}
+    for event in item["events"]:
+        key = (event["deal_type"], clock(event["start_pt"]), clock(event["end_pt"]))
+        groups.setdefault(key, []).append(event["name"])
+    parts = []
+    for (deal_type, start_label, end_label), names in groups.items():
+        window = f"{start_label} – {end_label}"
+        if len(names) == 1:
+            parts.append(f"{deal_type}: {names[0]} ({window})")
+        else:
+            plural = f"{deal_type}s" if not deal_type.endswith("s") else deal_type
+            parts.append(f"{plural}: {', '.join(_strip_shared_tag(names))} ({window})")
+    return "; ".join(parts)
 
 
 def checked_pt_date(item: dict[str, Any]) -> str | None:

@@ -165,6 +165,27 @@ class DealCalendarGateTest(unittest.TestCase):
         REPORT.read_deal_calendar(path, ["2026-08-11"], checks)
         self.assertTrue(any(c.name == "deal_calendar:2026-08-11" and c.status == "fail" for c in checks))
 
+    def test_deal_text_groups_multiple_best_deals_without_clutter(self) -> None:
+        item = {
+            "status": "Best Deal",
+            "events": [
+                {
+                    "name": "Iconic Bed Skirt (BF/CM Nov 19-30)",
+                    "deal_type": "Best Deal",
+                    "start_pt": "2026-11-19T00:00:00-08:00",
+                    "end_pt": "2026-12-01T00:00:00-08:00",
+                },
+                {
+                    "name": "180 Flannel Sheets (BF/CM Nov 19-30)",
+                    "deal_type": "Best Deal",
+                    "start_pt": "2026-11-19T00:00:00-08:00",
+                    "end_pt": "2026-12-01T00:00:00-08:00",
+                },
+            ],
+        }
+        text = REPORT.deal_text(item)
+        self.assertEqual(text, "Best Deals: Iconic Bed Skirt, 180 Flannel Sheets (Nov 19 12:00 AM – Dec 1 12:00 AM)")
+
 
 if __name__ == "__main__":
     unittest.main()
