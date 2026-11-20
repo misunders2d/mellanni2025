@@ -338,6 +338,29 @@ class DailyCompetitorGateTest(unittest.TestCase):
         self.assertEqual(REPORT.read_competitor_check(path, self.config_path, checks, now_utc=REPORT.pd.Timestamp(checked_at), target_date="2026-11-18"), [])
         self.assertEqual(checks[-1].status, "fail")
 
+    def test_competitor_price_cell_formats_multi_point_intraday_dip(self) -> None:
+        item = {
+            "brand": "Utopia Bedding",
+            "asin": "B00NX0WXQI",
+            "current_price": 17.99,
+            "current_price_source": "buy_box",
+            "list_price": 29.99,
+            "target_date_price": 17.99,
+            "target_date_price_end": 17.99,
+            "target_date_price_source": "buy_box",
+            "target_date_price_points": [
+                {"time_pt": "2026-11-02T20:49:00-08:00", "price": 17.99, "carried_in": True},
+                {"time_pt": "2026-11-19T11:17:00-08:00", "price": 13.31, "carried_in": False},
+                {"time_pt": "2026-11-19T12:23:00-08:00", "price": 12.64, "carried_in": False},
+                {"time_pt": "2026-11-19T19:17:00-08:00", "price": 17.99, "carried_in": False},
+            ],
+            "checked_at_utc": "2026-11-20T11:32:00+00:00",
+        }
+        headline, notes = REPORT.competitor_price_cell(item, "2026-11-19")
+        self.assertEqual(headline, "$12.64–$17.99")
+        joined = " · ".join(notes)
+        self.assertIn("$17.99 → $13.31 (11:17 AM) → $12.64 (12:23 PM) → $17.99 (7:17 PM)", joined)
+
     def test_mcp_history_isolates_target_date_prices_and_separates_d_plus_1_deals(self) -> None:
         checked = "2026-11-19T11:22:00+00:00"
         now_ts = datetime.fromisoformat(checked).timestamp()

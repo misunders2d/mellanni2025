@@ -659,12 +659,24 @@ def competitor_price_cell(item: dict[str, Any], target_date: str) -> tuple[str, 
 
     points = item.get("target_date_price_points") or []
     prices = [float(point["price"]) for point in points if isinstance(point.get("price"), (int, float))] or [float(item["target_date_price"])]
-    headline = f"{fmt_money(prices[0], 2)} → {fmt_money(prices[-1], 2)}" if len(prices) >= 2 else fmt_money(prices[0], 2)
+    if len(prices) == 1:
+        headline = fmt_money(prices[0], 2)
+    elif len(prices) == 2:
+        headline = f"{fmt_money(prices[0], 2)} → {fmt_money(prices[1], 2)}"
+    else:
+        lo, hi = min(prices), max(prices)
+        headline = fmt_money(lo, 2) if round(lo, 2) == round(hi, 2) else f"{fmt_money(lo, 2)}–{fmt_money(hi, 2)}"
     src = str(item.get("target_date_price_source") or item.get("current_price_source") or "buy_box").replace("_", " ").title()
     notes = [src]
-    if len(points) >= 2:
+    if len(points) == 2:
         changed = points[-1]
         notes.append(f"{fmt_money(changed['price'], 2)} from {clock(changed.get('time_pt'))}")
+    elif len(points) >= 3:
+        chain = [fmt_money(points[0]["price"], 2)]
+        for pt in points[1:]:
+            t = clock(pt.get("time_pt")).split(" ", 2)[-1]
+            chain.append(f"{fmt_money(pt['price'], 2)} ({t})")
+        notes.append(" → ".join(chain))
     if item.get("list_price"):
         notes.append(f"list {fmt_money(item['list_price'], 2)}")
     if item.get("target_date_coupon"):
