@@ -132,7 +132,10 @@ def validate_account_provenance(report_dir: Path, dates: dict[str, date]) -> lis
     }
     metadata_ok = all(manifest.get(key) == value for key, value in required.items())
     identity_ok = bool(manifest.get("query_id")) and bool(manifest.get("document_id"))
-    raw_hash_ok = manifest.get("raw_sha256") == sha256_file(raw_path)
+    raw_sha256 = sha256_file(raw_path)
+    raw_hash_ok = manifest.get("raw_sha256") == raw_sha256
+    provider_sha = manifest.get("provider_sha256")
+    provider_hash_ok = (provider_sha == raw_sha256) if provider_sha else True
     normalized_hash_ok = manifest.get("normalized_sha256") == sha256_file(normalized_path)
     try:
         raw_rows = [json.loads(line) for line in raw_path.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -166,11 +169,11 @@ def validate_account_provenance(report_dir: Path, dates: dict[str, date]) -> lis
     except Exception:
         by_date_shape = False
         normalized_matches_raw = False
-    ok = metadata_ok and identity_ok and raw_hash_ok and normalized_hash_ok and by_date_shape and normalized_matches_raw
+    ok = metadata_ok and identity_ok and raw_hash_ok and provider_hash_ok and normalized_hash_ok and by_date_shape and normalized_matches_raw
     checks.append(Check(
         "account_source_provenance",
         "pass" if ok else "fail",
-        f"metadata={metadata_ok}; identity={identity_ok}; raw_hash={raw_hash_ok}; normalized_hash={normalized_hash_ok}; by_date_shape={by_date_shape}; normalized_matches_raw={normalized_matches_raw}",
+        f"metadata={metadata_ok}; identity={identity_ok}; raw_hash={raw_hash_ok}; provider_hash={provider_hash_ok}; normalized_hash={normalized_hash_ok}; by_date_shape={by_date_shape}; normalized_matches_raw={normalized_matches_raw}",
     ))
     return checks
 
@@ -418,11 +421,13 @@ def build_h10_keyword_table(h10: pd.DataFrame, sqp: pd.DataFrame, checks: list[C
     sqp_cols = [c for c in ["keyword", "search_query_volume", "total_purchases", "brand_purchases", "est_total_keyword_sales", "est_brand_keyword_sales", "brand_ctr", "brand_purchase_per_click"] if c in sqp.columns]
     if sqp_cols:
         grouped = grouped.merge(sqp[sqp_cols].copy(), on="keyword", how="left")
+    td_max = grouped["title_density"].max()
+    td_fill = 0 if pd.isna(td_max) else td_max
     grouped["opportunity_score"] = (
         grouped["keyword_sales"].fillna(0).rank(pct=True) * 40
         + grouped["search_volume"].fillna(0).rank(pct=True) * 25
         + grouped["iq_score"].fillna(0).rank(pct=True) * 20
-        + (1 - grouped["title_density"].fillna(grouped["title_density"].max() or 0).rank(pct=True)) * 15
+        + (1 - grouped["title_density"].fillna(td_fill).rank(pct=True)) * 15
     ).round(1)
     grouped = grouped.sort_values(["keyword_sales", "search_volume", "opportunity_score"], ascending=False)
     overlap = grouped["est_total_keyword_sales"].notna().sum() if "est_total_keyword_sales" in grouped else 0
@@ -478,6 +483,14 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
         v = validation.iloc[0]
         checks.append(Check("business_report_days", "pass" if str(v.get("min_date")) == str(dates["prior_start"]) and str(v.get("max_date")) == str(dates["week_end"]) else "warning", f"min={v.get('min_date')} max={v.get('max_date')}"))
         checks.append(Check("negative_metrics", "pass" if float(v.get("negative_metric_rows", 1)) == 0 else "fail", f"negative_metric_rows={v.get('negative_metric_rows')}"))
+        cur_rows = int(v.get("current_rows", 0) or 0)
+        prior_rows = int(v.get("prior_rows", 0) or 0)
+        total_rows = int(v.get("row_count", 0) or 0)
+        checks.append(Check(
+            "validation_row_counts",
+            "pass" if cur_rows > 0 and prior_rows > 0 and (cur_rows + prior_rows == total_rows) else "fail",
+            f"current={cur_rows} prior={prior_rows} total={total_rows}",
+        ))
     else:
         checks.append(Check("validation_row", "fail", "validation.csv empty"))
 
@@ -524,11 +537,12 @@ def build_context(data: dict[str, pd.DataFrame], dates: dict[str, date]) -> tupl
         "all_orders_gross_item_sales": current_ao_gross,
     }
 
-    if metrics["gross_sales"] and metrics["net_item_sales"]:
+    if cur_net_d and metrics["gross_sales"] and metrics["net_item_sales"]:
+        raw_ao_gross = float(cur_net_d.get("gross_item_sales", 0) or 0)
         checks.append(Check(
             "gross_sales_kpi_from_all_orders",
-            "pass" if abs(metrics["gross_sales"] - metrics["all_orders_gross_item_sales"]) < 0.01 else "fail",
-            "Gross Sales KPI uses all-orders gross_item_sales",
+            "pass" if abs(metrics["gross_sales"] - raw_ao_gross) < 0.01 else "fail",
+            f"kpi={metrics['gross_sales']:,.2f}; all_orders_gross={raw_ao_gross:,.2f}",
         ))
         checks.append(Check(
             "gross_sales_gte_net_item_sales",
@@ -581,11 +595,16 @@ def html_bar(value: float, max_abs: float, color: str = "#2563eb") -> str:
         pct = 0
     else:
         pct = min(100, max(0, abs(float(value)) / max_abs * 100))
-    return f"<div style='background:#edf2f7;width:160px;height:10px;border-radius:6px'><div style='background:{color};width:{pct:.1f}%;height:10px;border-radius:6px'></div></div>"
+    return f"<div class='bar-track' style='background:#edf2f7;width:160px;max-width:100%;height:10px;border-radius:6px'><div style='background:{color};width:{pct:.1f}%;height:10px;border-radius:6px'></div></div>"
 
 
 def render_table(rows: list[dict[str, Any]], columns: list[tuple[str, str]], money: set[str] = set(), pct: set[str] = set(), integer: set[str] = set()) -> str:
-    th = "".join(f"<th style='background:#1f2937;color:#fff;text-align:left;padding:8px;border:1px solid #e5e7eb'>{escape(label)}</th>" for key, label in columns)
+    text_keys = {"collection", "promo_label", "keyword", "size", "color"}
+    th_parts = [
+        f"<th style='background:#1f2937;color:#fff;text-align:left;padding:6px 5px;border:1px solid #e5e7eb;white-space:normal'>{escape(label)}</th>"
+        for _, label in columns
+    ]
+    th = "".join(th_parts)
     trs = []
     for row in rows:
         tds = []
@@ -613,9 +632,10 @@ def render_table(rows: list[dict[str, Any]], columns: list[tuple[str, str]], mon
                     pass
             if key == "rank_change_label":
                 color = "#0f8a4b" if str(val).startswith("↓") else ("#b91c1c" if str(val).startswith("↑") else "#667085")
-            tds.append(f"<td style='padding:8px;border:1px solid #e5e7eb;color:{color}'>{text}</td>")
+            wrap_style = "overflow-wrap:anywhere;word-break:break-word;min-width:76px" if key in text_keys else "white-space:nowrap"
+            tds.append(f"<td style='padding:6px 5px;border:1px solid #e5e7eb;color:{color};{wrap_style}'>{text}</td>")
         trs.append("<tr>" + "".join(tds) + "</tr>")
-    return f"<table style='border-collapse:collapse;width:100%;font-size:13px;margin:8px 0 16px'><tr>{th}</tr>{''.join(trs)}</table>"
+    return f"<div class='table-wrap' style='overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%'><table class='data-table' style='border-collapse:collapse;width:100%;font-size:12px;margin:8px 0 16px'><tr>{th}</tr>{''.join(trs)}</table></div>"
 
 
 def render_html(context: dict[str, Any]) -> str:
@@ -656,12 +676,17 @@ def render_html(context: dict[str, Any]) -> str:
         ("Units", fmt_int(m["units"]), units_delta, units_color),
         ("Conversion", fmt_pct(m["conversion"], 2), conv_delta, conv_color),
     ]
-    cards_html = "".join(
-        f"<td style='background:#f8fbff;border:1px solid #dbeafe;border-radius:8px;padding:14px;width:25%;vertical-align:top'>"
-        f"<div style='font-size:11px;text-transform:uppercase;color:#667085;font-weight:700'>{label}</div>"
-        f"<div style='font-size:23px;font-weight:800;margin:6px 0'>{value}</div>"
-        f"<div style='font-size:12px;color:{color};font-weight:700'>{delta}</div></td>"
-        for label, value, delta, color in kpi_cards
+    kpi_rows_html = "".join(
+        "<tr>"
+        + "".join(
+            f"<td style='background:#f8fbff;border:1px solid #dbeafe;border-radius:8px;padding:12px;width:50%;vertical-align:top'>"
+            f"<div style='font-size:11px;text-transform:uppercase;color:#667085;font-weight:700'>{label}</div>"
+            f"<div class='kpi-val' style='font-size:21px;font-weight:800;margin:6px 0'>{value}</div>"
+            f"<div style='font-size:12px;color:{color};font-weight:700'>{delta}</div></td>"
+            for label, value, delta, color in kpi_pair
+        )
+        + "</tr>"
+        for kpi_pair in (kpi_cards[:2], kpi_cards[2:])
     )
 
     top_product = products.iloc[0] if len(products) else None
@@ -675,7 +700,9 @@ def render_html(context: dict[str, Any]) -> str:
         f"Item promo discount rate was {fmt_pct(promo_rate, 1)}. Shipment/shipping promotions are not product promotions and are excluded from this CEO promotion view.",
     ]
     if top_product is not None:
-        bullets.append(f"Top collection remained {escape(str(top_product['collection']))} at {fmt_money(top_product['sales'])} and {fmt_pct(top_product['unit_conversion'], 2)} conversion.")
+        prior_top = context["products"].sort_values("prior_sales", ascending=False).iloc[0] if len(context["products"]) else None
+        verb = "remained" if prior_top is not None and str(prior_top["collection"]) == str(top_product["collection"]) else "was"
+        bullets.append(f"Top collection {verb} {escape(str(top_product['collection']))} at {fmt_money(top_product['sales'])} and {fmt_pct(top_product['unit_conversion'], 2)} conversion.")
     if biggest_decline is not None:
         bullets.append(f"Largest collection sales pressure: {escape(str(biggest_decline['collection']))} ({fmt_money(biggest_decline['sales_delta'])} WoW).")
 
@@ -711,12 +738,14 @@ def render_html(context: dict[str, Any]) -> str:
     top_asin_evidence = "; ".join(top_asin_details)
     actions_html = f'''
   <h2 style="font-size:22px;margin:18px 0 10px;color:#111827">Actions / Takeaways</h2>
-  <table style="width:100%;border-collapse:collapse;margin:0 0 18px;font-size:14px;line-height:1.45">
+  <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+  <table class="data-table" style="width:100%;border-collapse:collapse;margin:0 0 18px;font-size:13px;line-height:1.45">
     <tr><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3;width:25%">Takeaway</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">Why it matters</th><th style="background:#7f1d1d;color:#fff;text-align:left;padding:9px;border:1px solid #fecdd3">This week’s action</th></tr>
     <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">{first_takeaway}</td><td style="padding:9px;border:1px solid #fecdd3">{first_why}</td><td style="padding:9px;border:1px solid #fecdd3">{first_action}</td></tr>
     <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Start with the biggest money ASINs.</td><td style="padding:9px;border:1px solid #fecdd3">{top_asin_evidence}</td><td style="padding:9px;border:1px solid #fecdd3">Assign owner to review these top ASINs and list exact fixes before next week’s report.</td></tr>
     <tr><td style="padding:9px;border:1px solid #fecdd3;font-weight:700">Use H10 for keywords; use SQP for shopper behavior.</td><td style="padding:9px;border:1px solid #fecdd3">H10 confirms priority demand pools: {h10_terms}. SQP should explain click/purchase behavior on those terms, not create a separate keyword list.</td><td style="padding:9px;border:1px solid #fecdd3">Check listing and PPC coverage for these H10 terms, then use SQP to see whether shoppers click and buy after seeing Mellanni.</td></tr>
-  </table>'''
+  </table>
+  </div>'''
 
     # HTML-native charts.
     trend = context["trend"].copy()
@@ -746,14 +775,49 @@ def render_html(context: dict[str, Any]) -> str:
     promo_table = render_table(promos.to_dict("records"), [
         ("promo_label", "Promo"), ("item_promo_discount", "Discount"), ("gross_item_sales", "Gross"), ("net_item_sales", "Net"), ("orders", "Orders"), ("units", "Units")
     ], money={"item_promo_discount", "gross_item_sales", "net_item_sales"}, integer={"orders", "units"})
-    keyword_table = render_table(keywords.to_dict("records"), [
-        ("keyword", "Keyword"), ("search_volume", "H10 Search Vol."), ("keyword_sales", "H10 Kw Sales"), ("organic_rank", "Org. Rank"), ("prior_organic_rank", "Prior Org. Rank"), ("rank_change_label", "Rank Change"), ("sponsored_rank", "Spon. Rank"), ("cpr", "CPR"), ("iq_score", "IQ"), ("trend", "Trend"), ("est_brand_keyword_sales", "SQP Brand Sales"), ("brand_purchase_per_click", "Brand Purch./Click")
-    ], money={"est_brand_keyword_sales"}, pct={"brand_purchase_per_click"}, integer={"search_volume", "keyword_sales", "organic_rank", "prior_organic_rank", "sponsored_rank", "trend"})
+    kw_cols = [("keyword", "Keyword")]
+    if keywords["h10_asins"].dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique() > 1:
+        kw_cols.append(("h10_asins", "ASIN"))
+    kw_cols.extend([
+        ("search_volume", "H10 Search Vol."),
+        ("keyword_sales", "H10 Kw Sales"),
+        ("organic_rank", "Org. Rank"),
+        ("prior_organic_rank", "Prior Org. Rank"),
+        ("rank_change_label", "Rank Change"),
+    ])
+    optional_kw_cols = [
+        ("sponsored_rank", "Spon. Rank"),
+        ("cpr", "CPR"),
+        ("iq_score", "IQ"),
+        ("trend", "Trend"),
+    ]
+    for col_key, col_label in optional_kw_cols:
+        if col_key in keywords.columns and keywords[col_key].notna().any():
+            kw_cols.append((col_key, col_label))
+    kw_cols.extend([
+        ("est_brand_keyword_sales", "SQP Brand Sales"),
+        ("brand_purchase_per_click", "Brand Purch./Click"),
+    ])
+    keyword_table = render_table(keywords.to_dict("records"), kw_cols, money={"est_brand_keyword_sales"}, pct={"brand_purchase_per_click"}, integer={"search_volume", "keyword_sales", "organic_rank", "prior_organic_rank", "sponsored_rank", "cpr", "trend"})
 
     return f"""
 <meta charset="utf-8">
-<div style="font-family:Arial,Helvetica,sans-serif;color:#242424;max-width:980px;margin:0 auto;background:#fff">
-  <div style="background:#111827;color:#fff;padding:24px 26px;margin-bottom:14px">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+@media only screen and (max-width:600px){{
+  .report-wrap{{padding:0 6px !important}}
+  .hero{{padding:16px 14px !important}}
+  .hero h1{{font-size:21px !important}}
+  .kpi-grid td{{padding:9px !important}}
+  .kpi-val{{font-size:18px !important}}
+  .data-table{{font-size:11px !important}}
+  .data-table th,.data-table td{{padding:5px 4px !important}}
+  .bar-track{{width:84px !important}}
+  .chart-box{{padding:8px !important}}
+}}
+</style>
+<div class="report-wrap" style="font-family:Arial,Helvetica,sans-serif;color:#242424;max-width:1040px;margin:0 auto;background:#fff;box-sizing:border-box">
+  <div class="hero" style="background:#111827;color:#fff;padding:24px 26px;margin-bottom:14px">
     <h1 style="margin:0 0 8px;font-size:26px;line-height:1.2">Mellanni Weekly CEO Overview</h1>
     <div style="font-size:13px;color:#dbe4f0">Week ending Sat {d['week_end']} · Compared to {d['prior_start']} – {d['prior_end']}</div>
   </div>
@@ -761,13 +825,13 @@ def render_html(context: dict[str, Any]) -> str:
 {actions_html}
 
   <h2 style="font-size:20px;margin:20px 0 12px">Executive snapshot</h2>
-  <table style="width:100%;border-spacing:8px;margin:0 0 12px"><tr>{cards_html}</tr></table>
+  <table class="kpi-grid" style="width:100%;border-spacing:6px;margin:0 0 12px;table-layout:fixed">{kpi_rows_html}</table>
   <ul style="margin:8px 0 16px;padding-left:22px;line-height:1.45">{''.join(f'<li>{b}</li>' for b in bullets)}</ul>
   <div style="border:1px solid #d9e2ec;background:#f8fafc;padding:10px 12px;margin:14px 0;font-size:12px;color:#475467"><b>Source reconciliation:</b> {source_note}</div>
 
   <h2 style="font-size:20px;margin:20px 0 10px">Charts</h2>
-  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare all-orders gross item sales within this two-week view.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div>
-  <div style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Largest collection movers by absolute WoW sales delta; red = decline, green = gain.</div><table style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div>
+  <div class="chart-box" style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>KPI trend</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Bars compare all-orders gross item sales within this two-week view.</div><div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%"><table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px">{trend_rows}</table></div></div>
+  <div class="chart-box" style="border:1px solid #d9e2ec;padding:12px;margin:8px 0 12px"><b>Collection sales delta</b><div style="font-size:12px;color:#667085;margin:4px 0 8px">Largest collection movers by absolute WoW sales delta; red = decline, green = gain.</div><div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%"><table class="data-table" style="width:100%;border-collapse:collapse;font-size:13px">{product_rows}</table></div></div>
 
   <h2 style="font-size:18px;margin:18px 0 8px">Product / collection conversion change</h2>{product_table}
   <h2 style="font-size:18px;margin:18px 0 8px">Top ASINs</h2>{asin_table}

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -16,24 +17,42 @@ import pandas as pd
 from report_storage import require_tmp_artifact_path
 
 HELPER = Path("/home/misunderstood/.pi/agent/extensions/google_workspace_sa.py")
-DEFAULT_RECIPIENTS = [
-    "igor@mellanni.com",
-    "margarita@mellanni.com",
-    "masao@mellanni.com",
-    "ruslan@mellanni.com",
-]
+DEFAULT_RECIPIENTS_CONFIG = Path(__file__).resolve().parents[1] / "config" / "weekly_ceo_recipients.json"
 
 
 def require_tmp(path: Path) -> Path:
     return require_tmp_artifact_path(path, label="Weekly report artifacts", error_type=SystemExit)
 
 
+def load_recipients(config_path: Path | None, to_args: list[str] | None) -> list[str]:
+    if to_args:
+        recipients = [addr.strip() for item in to_args for addr in item.split(",") if addr.strip()]
+        if not recipients or not all("@" in x for x in recipients):
+            raise SystemExit("Invalid --to recipient address")
+        return recipients
+    env_path = os.environ.get("WEEKLY_CEO_RECIPIENTS_CONFIG")
+    resolved = config_path or (Path(env_path) if env_path else DEFAULT_RECIPIENTS_CONFIG)
+    if not resolved.exists():
+        raise SystemExit(
+            f"Missing recipients config: {resolved}. "
+            'Create ignored JSON like {"to": ["person@example.com"]} or pass --to.'
+        )
+    data = json.loads(resolved.read_text(encoding="utf-8"))
+    to = data.get("to") or []
+    if not isinstance(to, list) or not to or not all(isinstance(x, str) and "@" in x for x in to):
+        raise SystemExit(f"Invalid recipients config: {resolved}")
+    return to
+
+
 def main() -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--report-dir", type=Path, required=True)
     p.add_argument("--week-end", required=True)
+    p.add_argument("--recipients-config", type=Path, help="Ignored JSON file with {'to': [...]} recipients")
+    p.add_argument("--to", action="append", help="Explicit recipient address(es), repeatable or comma-separated")
     args = p.parse_args()
     report_dir = require_tmp(args.report_dir)
+    recipients = load_recipients(args.recipients_config, args.to)
     account_path = report_dir / "source_data_kiosk_account_by_date.csv"
     if not account_path.exists():
         raise SystemExit(f"Missing mandatory account-by-date headline source: {account_path}")
@@ -98,7 +117,7 @@ def main() -> int:
 
     payload = {
         "confirm_write": True,
-        "to": DEFAULT_RECIPIENTS,
+        "to": recipients,
         "draft_subject": f"Mellanni Weekly CEO Overview — Week Ending {args.week_end} (formerly Conversion and Keyword standings)",
         "body_html": html,
         "attachments": [
@@ -121,7 +140,7 @@ def main() -> int:
         print(proc.stdout.strip() or "draft creation failed")
         return proc.returncode
     result = json.loads(proc.stdout)
-    print(json.dumps({
+    out = {
         "status": result.get("status"),
         "draft_id": result.get("draft_id"),
         "message_id": result.get("message_id"),
@@ -129,7 +148,17 @@ def main() -> int:
         "label_ids": result.get("label_ids"),
         "attachment_count": result.get("attachment_count"),
         "inline_attachment_count": result.get("inline_attachment_count"),
-    }, indent=2))
+    }
+    if (
+        out["status"] != "success"
+        or not out["draft_id"]
+        or "DRAFT" not in (out["label_ids"] or [])
+        or out["attachment_count"] != 1
+    ):
+        raise SystemExit(
+            f"Gmail draft response failed final verification (draft may already exist in Gmail; inspect/supersede before retrying): {json.dumps(out)}"
+        )
+    print(json.dumps(out, indent=2))
     return 0
 
 

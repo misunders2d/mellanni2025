@@ -20,7 +20,7 @@ from typing import Any
 from report_storage import require_tmp_artifact_path
 
 HELPER = Path("/home/misunderstood/.pi/agent/extensions/google_workspace_sa.py")
-DEFAULT_RECIPIENTS_CONFIG = Path("config/daily_sales_recipients.json")
+DEFAULT_RECIPIENTS_CONFIG = Path(__file__).resolve().parents[1] / "config" / "daily_sales_recipients.json"
 CHART_CID = "daily-hourly-sales"
 
 
