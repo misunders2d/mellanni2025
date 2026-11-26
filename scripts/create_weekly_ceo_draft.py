@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Create Gmail draft for a generated weekly CEO report from temporary HTML.
 
-Uses Pi's Google Workspace helper. Does not send email and does not print secrets.
+Uses gwscli (company profile) via gwscli_gmail. Does not send email and does not print
+secrets. The workbook is attached when it fits gwscli's command-line limit (~95 KB);
+otherwise the draft is created without it and the output names the file for Sergey
+to attach in Gmail himself (owner decision, 2026-11-26).
 """
 from __future__ import annotations
 
@@ -14,9 +17,9 @@ from pathlib import Path
 
 import pandas as pd
 
+from gwscli_gmail import create_draft, gmail_safe_css, read_back, split_attachments
 from report_storage import require_tmp_artifact_path
 
-HELPER = Path("/home/misunderstood/.pi/agent/extensions/google_workspace_sa.py")
 DEFAULT_RECIPIENTS_CONFIG = Path(__file__).resolve().parents[1] / "config" / "weekly_ceo_recipients.json"
 
 
@@ -115,49 +118,28 @@ def main() -> int:
     if promo_label and promo_label not in html:
         raise SystemExit(f"HTML missing top promo marker: {promo_label}")
 
-    payload = {
-        "confirm_write": True,
-        "to": recipients,
-        "draft_subject": f"Mellanni Weekly CEO Overview — Week Ending {args.week_end} (formerly Conversion and Keyword standings)",
-        "body_html": html,
-        "attachments": [
-            {
-                "local_path": str(xlsx_path),
-                "filename": f"Mellanni_Weekly_CEO_Overview_{args.week_end}.xlsx",
-                "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            }
-        ],
-    }
-    proc = subprocess.run(
-        [sys.executable, str(HELPER), "gmail_create_draft"],
-        input=json.dumps(payload),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if proc.returncode != 0:
-        # Helper stdout is sanitized error JSON by design; stderr should normally be empty.
-        print(proc.stdout.strip() or "draft creation failed")
-        return proc.returncode
-    result = json.loads(proc.stdout)
+    subject = f"Mellanni Weekly CEO Overview — Week Ending {args.week_end} (formerly Conversion and Keyword standings)"
+    attachments, manual = split_attachments([xlsx_path])
+    result = create_draft(recipients, subject, gmail_safe_css(html), attachments)
+    stored = read_back(result["id"])
     out = {
-        "status": result.get("status"),
-        "draft_id": result.get("draft_id"),
-        "message_id": result.get("message_id"),
-        "thread_id": result.get("thread_id"),
-        "label_ids": result.get("label_ids"),
-        "attachment_count": result.get("attachment_count"),
-        "inline_attachment_count": result.get("inline_attachment_count"),
+        "status": "success",
+        "draft_id": result["id"],
+        "message_id": stored["message_id"],
+        "thread_id": stored["thread_id"],
+        "label_ids": stored["label_ids"],
+        "attachment_count": stored["attachment_count"],
+        "inline_attachment_count": stored["inline_attachment_count"],
+        "manual_attachments": [str(path) for path in manual],
+        "route": "gwscli",
+        "email_sent": False,
     }
-    if (
-        out["status"] != "success"
-        or not out["draft_id"]
-        or "DRAFT" not in (out["label_ids"] or [])
-        or out["attachment_count"] != 1
-    ):
+    if "DRAFT" not in (out["label_ids"] or []) or out["attachment_count"] != len(attachments):
         raise SystemExit(
-            f"Gmail draft response failed final verification (draft may already exist in Gmail; inspect/supersede before retrying): {json.dumps(out)}"
+            f"Gmail draft failed final verification (draft exists in Gmail; inspect/supersede before retrying): {json.dumps(out)}"
         )
+    if manual:
+        print("ATTACH MANUALLY in Gmail (over gwscli's size limit): " + ", ".join(out["manual_attachments"]), file=sys.stderr)
     print(json.dumps(out, indent=2))
     return 0
 

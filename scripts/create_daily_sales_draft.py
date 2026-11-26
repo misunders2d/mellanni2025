@@ -11,20 +11,15 @@ inline (Gmail MCP `inline: true`) and referenced in the HTML as cid:att0.
 from __future__ import annotations
 
 import argparse
-import email
-import email.policy
-import base64
 import json
 import os
 import re
-import subprocess
 from pathlib import Path
 from typing import Any
 
+from gwscli_gmail import attachment_json, create_draft, fits, gmail_safe_css, read_back
 from report_storage import require_tmp_artifact_path
 
-GWSCLI_PROFILE = Path(os.environ.get("MELLANNI_GWSCLI_CONFIG", Path.home() / ".config/gwscli-profiles/company"))
-MAX_ARG_BYTES = 130_000   # Linux caps one command-line argument at 128 KiB (131072); body and each attachment are one
 CHART_CID = "att0"        # Gmail MCP names inline attachments by position: first attachment = cid:att0
 DEFAULT_RECIPIENTS_CONFIG = Path(__file__).resolve().parents[1] / "config" / "daily_sales_recipients.json"
 
@@ -43,55 +38,10 @@ def build_inline_chart(report_dir: Path, target_date: str, html: str) -> str:
     chart_path = report_dir / f"hourly_sales_{target_date}.png"
     if not chart_path.is_file():
         raise SystemExit(f"Missing hourly chart image: {chart_path}")
-    attachment = json.dumps({
-        "filename": chart_path.name,
-        "mimeType": "image/png",
-        "inline": True,
-        "content": base64.b64encode(chart_path.read_bytes()).decode("ascii"),
-    })
-    if len(attachment) > MAX_ARG_BYTES:
-        raise SystemExit(f"Hourly chart attachment is {len(attachment)} bytes; gwscli limit is {MAX_ARG_BYTES}")
+    attachment = attachment_json(chart_path, "image/png", inline=True)
+    if not fits(attachment):
+        raise SystemExit(f"Hourly chart attachment is {len(attachment)} bytes; over gwscli's command-line limit")
     return attachment
-
-
-BACKGROUND_SHORTHAND = re.compile(r"background\s*:\s*(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\s*(?=[;\"'])")
-
-
-def gmail_safe_css(html: str) -> str:
-    """Gmail (via gwscli) drops the `background:` shorthand but keeps `background-color:`."""
-    html = BACKGROUND_SHORTHAND.sub(r"background-color:\1", html)
-    if re.search(r"background\s*:", html):
-        raise SystemExit("HTML has a background: shorthand that is not a plain color; Gmail would drop it")
-    return html
-
-
-def gwscli(*args: str) -> dict[str, Any]:
-    proc = subprocess.run(["gwscli", *args], env={**os.environ, "XDG_CONFIG_HOME": str(GWSCLI_PROFILE)},
-                          text=True, capture_output=True, check=False)
-    if proc.returncode != 0:
-        raise SystemExit(f"gwscli {' '.join(args[:2])} failed (exit {proc.returncode}): {(proc.stderr or proc.stdout).strip()[:300]}")
-    return json.loads(proc.stdout)
-
-
-def gwscli_create_draft(to: list[str], subject: str, html: str, attachment: str) -> dict[str, Any]:
-    if not GWSCLI_PROFILE.is_dir():
-        raise SystemExit(f"gwscli company profile missing: {GWSCLI_PROFILE}")
-    if len(html.encode("utf-8")) > MAX_ARG_BYTES:
-        raise SystemExit(f"HTML body is over {MAX_ARG_BYTES} bytes; gwscli takes it as one command-line argument")
-    args = ["gmail", "create_draft", "--subject", subject, "--htmlBody", html]
-    for address in to:
-        args += ["--to", address]
-    return gwscli(*args, "--attachments", attachment)
-
-
-def inline_image_count(draft_id: str) -> int:
-    """Read the stored MIME back: count inline image parts (proves the chart is embedded, not a normal attachment)."""
-    raw = base64.urlsafe_b64decode(gwscli("gmail", "get_draft", "--draftId", draft_id, "--messageFormat", "RAW")["raw"] + "==")
-    message = email.message_from_bytes(raw, policy=email.policy.default)
-    return sum(
-        1 for part in message.walk()
-        if part.get_content_maintype() == "image" and (part.get("Content-Disposition") or "").startswith("inline") and part.get("Content-ID")
-    )
 
 
 def validate_promotions(verification: dict[str, Any]) -> None:
@@ -198,18 +148,16 @@ def main() -> int:
     if existing_draft_status:
         raise SystemExit(f"Draft already recorded ({existing_draft_status.get('draft_id')}); this helper will not create duplicates")
 
-    result = gwscli_create_draft(recipients, subject, html, attachment)
-    if not result.get("id"):
-        raise SystemExit("gwscli create_draft returned no draft id")
-    stored = gwscli("gmail", "get_draft", "--draftId", result["id"])   # read back: proves it is a draft
+    result = create_draft(recipients, subject, html, [attachment])
+    stored = read_back(result["id"])   # proves it is a draft with the chart embedded
     draft_status = {
         "status": "success",
         "draft_id": result["id"],
-        "message_id": stored.get("messageId") or result.get("messageId"),
-        "thread_id": stored.get("threadId") or result.get("threadId"),
-        "label_ids": stored.get("labelIds"),
+        "message_id": stored["message_id"],
+        "thread_id": stored["thread_id"],
+        "label_ids": stored["label_ids"],
         "hourly_chart": "inline_png",
-        "inline_attachment_count": inline_image_count(result["id"]),
+        "inline_attachment_count": stored["inline_attachment_count"],
         "route": "gwscli",
         "email_sent": False,
     }
