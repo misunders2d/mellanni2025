@@ -4,7 +4,9 @@
 Reads deterministic builder outputs from a temporary work directory under /tmp.
 It never sends mail. Recipients come from an ignored local JSON config, not committed
 code or verification artifacts. Use --dry-run to validate without creating a
-new Gmail draft.
+new Gmail draft. The draft goes through gwscli (Google's official Workspace CLI)
+under the company profile; the hourly chart is HTML tables, so there are no
+attachments.
 """
 from __future__ import annotations
 
@@ -13,41 +15,46 @@ import json
 import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 from report_storage import require_tmp_artifact_path
 
-HELPER = Path("/home/misunderstood/.pi/agent/extensions/google_workspace_sa.py")
+GWSCLI_PROFILE = Path(os.environ.get("MELLANNI_GWSCLI_CONFIG", Path.home() / ".config/gwscli-profiles/company"))
+MAX_ARG_BYTES = 120_000   # Linux caps one command-line argument at 128 KiB; the HTML body is one
 DEFAULT_RECIPIENTS_CONFIG = Path(__file__).resolve().parents[1] / "config" / "daily_sales_recipients.json"
-CHART_CID = "daily-hourly-sales"
 
 
 def require_tmp(path: Path) -> Path:
     return require_tmp_artifact_path(path, label="Daily report artifacts", error_type=SystemExit)
 
 
-def build_inline_attachments(report_dir: Path, target_date: str, html: str) -> list[dict[str, Any]]:
-    cid_count = html.lower().count(f"cid:{CHART_CID}")
-    if not cid_count:
-        if "cid:" in html.lower():
-            raise SystemExit("HTML contains an unapproved inline image CID")
-        raise SystemExit("Daily sales report is missing the mandatory hourly chart CID")
-    if cid_count != 1 or html.lower().count("cid:") != 1:
-        raise SystemExit("HTML must contain exactly one approved hourly-chart CID")
-    chart_path = report_dir / f"hourly_sales_{target_date}.png"
-    if not chart_path.is_file():
-        raise SystemExit(f"Missing hourly chart image: {chart_path}")
-    return [{
-        "filename": chart_path.name,
-        "mime_type": "image/png",
-        "local_path": str(chart_path),
-        "inline": True,
-        "content_id": CHART_CID,
-    }]
+def validate_hourly_chart(html: str) -> None:
+    """The hourly chart must be the HTML-table version: no images, CIDs or data URLs."""
+    lowered = html.lower()
+    if "<!-- daily_hourly_start -->" not in lowered or "peak hour:" not in lowered:
+        raise SystemExit("Daily sales report is missing the mandatory HTML hourly chart")
+    if "cid:" in lowered or "data:image" in lowered or "<img" in lowered:
+        raise SystemExit("HTML must not contain images, CID references or data:image URLs")
 
 
+def gwscli(*args: str) -> dict[str, Any]:
+    proc = subprocess.run(["gwscli", *args], env={**os.environ, "XDG_CONFIG_HOME": str(GWSCLI_PROFILE)},
+                          text=True, capture_output=True, check=False)
+    if proc.returncode != 0:
+        raise SystemExit(f"gwscli {' '.join(args[:2])} failed (exit {proc.returncode}): {(proc.stderr or proc.stdout).strip()[:300]}")
+    return json.loads(proc.stdout)
+
+
+def gwscli_create_draft(to: list[str], subject: str, html: str) -> dict[str, Any]:
+    if not GWSCLI_PROFILE.is_dir():
+        raise SystemExit(f"gwscli company profile missing: {GWSCLI_PROFILE}")
+    if len(html.encode("utf-8")) > MAX_ARG_BYTES:
+        raise SystemExit(f"HTML body is over {MAX_ARG_BYTES} bytes; gwscli takes it as one command-line argument")
+    args = ["gmail", "create_draft", "--subject", subject, "--htmlBody", html]
+    for address in to:
+        args += ["--to", address]
+    return gwscli(*args)
 
 
 def validate_promotions(verification: dict[str, Any]) -> None:
@@ -135,23 +142,15 @@ def main() -> int:
         raise SystemExit("HTML must not embed data:image URLs")
     validate_promotions(verification)
     validate_promotion_columns(html)
-    attachments = build_inline_attachments(report_dir, args.target_date, html)
-
-    payload = {
-        "confirm_write": True,
-        "to": recipients,
-        "draft_subject": subject,
-        "body_html": html,
-    }
-    if attachments:
-        payload["attachments"] = attachments
+    validate_hourly_chart(html)
     if args.dry_run:
         print(json.dumps({
             "status": "dry_run_pass",
             "subject": subject,
             "recipient_count": len(recipients),
             "html": str(html_path),
-            "inline_attachment_count": len(attachments),
+            "hourly_chart": "html_tables",
+            "html_bytes": len(html.encode("utf-8")),
             "verification": str(verification_path),
             "existing_draft_id": (existing_draft_status or {}).get("draft_id"),
         }, indent=2))
@@ -160,25 +159,18 @@ def main() -> int:
     if existing_draft_status:
         raise SystemExit(f"Draft already recorded ({existing_draft_status.get('draft_id')}); this helper will not create duplicates")
 
-    proc = subprocess.run(
-        [sys.executable, str(HELPER), "gmail_create_draft"],
-        input=json.dumps(payload),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if proc.returncode != 0:
-        print(proc.stdout.strip() or "draft creation failed")
-        return proc.returncode
-    result = json.loads(proc.stdout)
+    result = gwscli_create_draft(recipients, subject, html)
+    if not result.get("id"):
+        raise SystemExit("gwscli create_draft returned no draft id")
+    stored = gwscli("gmail", "get_draft", "--draftId", result["id"])   # read back: proves it is a draft
     draft_status = {
-        "status": result.get("status"),
-        "draft_id": result.get("draft_id"),
-        "message_id": result.get("message_id"),
-        "thread_id": result.get("thread_id"),
-        "label_ids": result.get("label_ids"),
-        "attachment_count": result.get("attachment_count"),
-        "inline_attachment_count": result.get("inline_attachment_count"),
+        "status": "success",
+        "draft_id": result["id"],
+        "message_id": stored.get("messageId") or result.get("messageId"),
+        "thread_id": stored.get("threadId") or result.get("threadId"),
+        "label_ids": stored.get("labelIds"),
+        "hourly_chart": "html_tables",
+        "route": "gwscli",
         "email_sent": False,
     }
     draft_status_path.write_text(json.dumps(draft_status, indent=2, default=str), encoding="utf-8")

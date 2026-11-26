@@ -24,26 +24,17 @@ class InlineChartTest(unittest.TestCase):
         self.assertEqual(DRAFT.require_tmp(allowed), allowed)
 
     def test_rejects_daily_report_without_hourly_chart(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            with self.assertRaisesRegex(SystemExit, "missing the mandatory hourly chart CID"):
-                DRAFT.build_inline_attachments(Path(temp), "2026-08-17", "<p>No chart</p>")
+        with self.assertRaisesRegex(SystemExit, "missing the mandatory HTML hourly chart"):
+            DRAFT.validate_hourly_chart("<p>No chart</p>")
 
-    def test_builds_one_related_inline_attachment_for_hourly_chart(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            report_dir = Path(temp)
-            chart = report_dir / "hourly_sales_2026-08-17.png"
-            chart.write_bytes(b"\x89PNG\r\n\x1a\nchart")
-            html = '<img src="cid:daily-hourly-sales">'
+    def test_rejects_images_in_html(self) -> None:
+        chart = "<!-- DAILY_HOURLY_START --><p>Peak hour: $1.0k</p><!-- DAILY_HOURLY_END -->"
+        for bad in ('<img src="cid:daily-hourly-sales">', '<img src="data:image/png;base64,AA">'):
+            with self.assertRaisesRegex(SystemExit, "must not contain images"):
+                DRAFT.validate_hourly_chart(chart + bad)
 
-            attachments = DRAFT.build_inline_attachments(report_dir, "2026-08-17", html)
-
-            self.assertEqual(attachments, [{
-                "filename": chart.name,
-                "mime_type": "image/png",
-                "local_path": str(chart),
-                "inline": True,
-                "content_id": "daily-hourly-sales",
-            }])
+    def test_accepts_html_table_chart(self) -> None:
+        DRAFT.validate_hourly_chart("<!-- DAILY_HOURLY_START --><table><tr><td>Peak hour: $1.0k</td></tr></table><!-- DAILY_HOURLY_END -->")
 
 
 if __name__ == "__main__":
