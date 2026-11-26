@@ -38,6 +38,17 @@ def validate_hourly_chart(html: str) -> None:
         raise SystemExit("HTML must not contain images, CID references or data:image URLs")
 
 
+BACKGROUND_SHORTHAND = re.compile(r"background\s*:\s*(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\s*(?=[;\"'])")
+
+
+def gmail_safe_css(html: str) -> str:
+    """Gmail (via gwscli) drops the `background:` shorthand but keeps `background-color:`."""
+    html = BACKGROUND_SHORTHAND.sub(r"background-color:\1", html)
+    if re.search(r"background\s*:", html):
+        raise SystemExit("HTML has a background: shorthand that is not a plain color; Gmail would drop it")
+    return html
+
+
 def gwscli(*args: str) -> dict[str, Any]:
     proc = subprocess.run(["gwscli", *args], env={**os.environ, "XDG_CONFIG_HOME": str(GWSCLI_PROFILE)},
                           text=True, capture_output=True, check=False)
@@ -143,6 +154,7 @@ def main() -> int:
     validate_promotions(verification)
     validate_promotion_columns(html)
     validate_hourly_chart(html)
+    html = gmail_safe_css(html)
     if args.dry_run:
         print(json.dumps({
             "status": "dry_run_pass",

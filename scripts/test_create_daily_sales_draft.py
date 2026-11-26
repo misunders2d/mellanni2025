@@ -33,6 +33,12 @@ class InlineChartTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "must not contain images"):
                 DRAFT.validate_hourly_chart(chart + bad)
 
+    def test_background_shorthand_becomes_background_color(self) -> None:
+        out = DRAFT.gmail_safe_css('<div style="background:#111827;color:#fff"><td style="padding:2px;background: #fff">')
+        self.assertEqual(out, '<div style="background-color:#111827;color:#fff"><td style="padding:2px;background-color:#fff">')
+        with self.assertRaisesRegex(SystemExit, "not a plain color"):
+            DRAFT.gmail_safe_css('<div style="background:url(x.png) #fff">')
+
     def test_accepts_html_table_chart(self) -> None:
         DRAFT.validate_hourly_chart("<!-- DAILY_HOURLY_START --><table><tr><td>Peak hour: $1.0k</td></tr></table><!-- DAILY_HOURLY_END -->")
 
