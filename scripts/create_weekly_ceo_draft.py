@@ -121,19 +121,23 @@ def main() -> int:
     subject = f"Mellanni Weekly CEO Overview — Week Ending {args.week_end} (formerly Conversion and Keyword standings)"
     attachments, manual = split_attachments([xlsx_path])
     result = create_draft(recipients, subject, gmail_safe_css(html), attachments)
-    stored = read_back(result["id"])
+    stored = read_back(result["id"], expected_inline=0, expected_normal=len(attachments))
     out = {
         "status": "success",
         "draft_id": result["id"],
         "message_id": stored["message_id"],
         "thread_id": stored["thread_id"],
         "label_ids": stored["label_ids"],
+        "view_url": stored.get("view_url"),
         "attachment_count": stored["attachment_count"],
         "inline_attachment_count": stored["inline_attachment_count"],
+        "attachment_verification": stored["attachment_verification"],
         "manual_attachments": [str(path) for path in manual],
         "route": "gwscli",
         "email_sent": False,
     }
+    if stored.get("attachment_verification_note"):
+        out["attachment_verification_note"] = stored["attachment_verification_note"]
     if "DRAFT" not in (out["label_ids"] or []) or out["attachment_count"] != len(attachments):
         raise SystemExit(
             f"Gmail draft failed final verification (draft exists in Gmail; inspect/supersede before retrying): {json.dumps(out)}"

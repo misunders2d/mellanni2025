@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import base64
+from email.message import EmailMessage
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+import gwscli_gmail
 
 MODULE_PATH = Path(__file__).with_name("create_daily_sales_draft.py")
 SPEC = importlib.util.spec_from_file_location("create_daily_sales_draft", MODULE_PATH)
@@ -50,6 +55,67 @@ class InlineChartTest(unittest.TestCase):
         self.assertEqual(out, '<div style="background-color:#111827;color:#fff"><td style="padding:2px;background-color:#fff">')
         with self.assertRaisesRegex(SystemExit, "not a plain color"):
             DRAFT.gmail_safe_css('<div style="background:url(x.png) #fff">')
+
+
+class GwscliReadBackTest(unittest.TestCase):
+    def _stored(self, html: str = '<img src="cid:att0">') -> dict:
+        return {
+            "id": "r123",
+            "messageId": "m123",
+            "threadId": "t123",
+            "labelIds": ["DRAFT"],
+            "viewUrl": "https://mail.google.com/mail/#all?compose=r123",
+            "htmlBody": html,
+        }
+
+    def test_read_back_raw_mime_zero_attachments(self) -> None:
+        msg = EmailMessage()
+        msg.set_content("hello")
+        raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii").rstrip("=")
+        raw_proc = subprocess.CompletedProcess(["gwscli"], 0, stdout=json.dumps({"raw": raw_b64}), stderr="")
+        with mock.patch.object(gwscli_gmail, "gwscli", return_value=self._stored("<p>ok</p>")), \
+             mock.patch.object(gwscli_gmail, "_run_gwscli", return_value=raw_proc):
+            res = gwscli_gmail.read_back("r123", expected_inline=0, expected_normal=0)
+        self.assertEqual(res["attachment_verification"], "raw_mime")
+        self.assertEqual(res["inline_attachment_count"], 0)
+        self.assertEqual(res["attachment_count"], 0)
+        self.assertEqual(res["label_ids"], ["DRAFT"])
+
+    def test_read_back_confirms_non_body_parts_when_gwscli_rejects_raw_with_attachments(self) -> None:
+        err_json = json.dumps({
+            "content": [{"text": gwscli_gmail.RAW_UNSUPPORTED_WITH_ATTACHMENTS + ". Use PLAIN_TEXT or FULL_CONTENT format instead.", "type": "text"}],
+            "isError": True,
+        })
+        raw_proc = subprocess.CompletedProcess(["gwscli"], 1, stdout="", stderr=err_json)
+        with mock.patch.object(gwscli_gmail, "gwscli", return_value=self._stored()), \
+             mock.patch.object(gwscli_gmail, "_run_gwscli", return_value=raw_proc):
+            res = gwscli_gmail.read_back("r123", expected_inline=1, expected_normal=0, expected_cid='src="cid:att0"')
+        self.assertEqual(res["attachment_verification"], "gwscli_non_body_parts_confirmed")
+        self.assertEqual(res["inline_attachment_count"], 1)
+        self.assertEqual(res["attachment_count"], 0)
+        self.assertIn("attachment_verification_note", res)
+
+    def test_read_back_fails_when_expected_cid_missing(self) -> None:
+        with mock.patch.object(gwscli_gmail, "gwscli", return_value=self._stored("<p>no chart</p>")):
+            with self.assertRaisesRegex(SystemExit, "missing expected"):
+                gwscli_gmail.read_back("r123", expected_inline=1, expected_cid='src="cid:att0"')
+
+    def test_read_back_detects_dropped_attachment_when_raw_succeeds_empty(self) -> None:
+        msg = EmailMessage()
+        msg.set_content("no attachment")
+        raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode("ascii").rstrip("=")
+        raw_proc = subprocess.CompletedProcess(["gwscli"], 0, stdout=json.dumps({"raw": raw_b64}), stderr="")
+        with mock.patch.object(gwscli_gmail, "gwscli", return_value=self._stored()), \
+             mock.patch.object(gwscli_gmail, "_run_gwscli", return_value=raw_proc):
+            res = gwscli_gmail.read_back("r123", expected_inline=1, expected_cid='src="cid:att0"')
+        self.assertEqual(res["inline_attachment_count"], 0)
+
+    def test_read_back_fails_on_unrelated_raw_error(self) -> None:
+        raw_proc = subprocess.CompletedProcess(["gwscli"], 1, stdout="", stderr="transient 500 error")
+        with mock.patch.object(gwscli_gmail, "gwscli", return_value=self._stored()), \
+             mock.patch.object(gwscli_gmail, "_run_gwscli", return_value=raw_proc):
+            with self.assertRaisesRegex(SystemExit, "transient 500 error"):
+                gwscli_gmail.read_back("r123", expected_inline=1, expected_cid='src="cid:att0"')
 
 
 if __name__ == "__main__":

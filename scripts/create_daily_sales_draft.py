@@ -149,18 +149,31 @@ def main() -> int:
         raise SystemExit(f"Draft already recorded ({existing_draft_status.get('draft_id')}); this helper will not create duplicates")
 
     result = create_draft(recipients, subject, html, [attachment])
-    stored = read_back(result["id"])   # proves it is a draft with the chart embedded
+    stored = read_back(
+        result["id"],
+        expected_inline=1,
+        expected_normal=0,
+        expected_cid=f'src="cid:{CHART_CID}"',
+    )
+    if "DRAFT" not in (stored.get("label_ids") or []) or stored["inline_attachment_count"] != 1:
+        raise SystemExit(
+            f"Gmail draft failed final verification (draft exists in Gmail id={result['id']}; inspect/supersede before retrying): {json.dumps(stored)}"
+        )
     draft_status = {
         "status": "success",
         "draft_id": result["id"],
         "message_id": stored["message_id"],
         "thread_id": stored["thread_id"],
         "label_ids": stored["label_ids"],
+        "view_url": stored.get("view_url"),
         "hourly_chart": "inline_png",
         "inline_attachment_count": stored["inline_attachment_count"],
+        "attachment_verification": stored["attachment_verification"],
         "route": "gwscli",
         "email_sent": False,
     }
+    if stored.get("attachment_verification_note"):
+        draft_status["attachment_verification_note"] = stored["attachment_verification_note"]
     draft_status_path.write_text(json.dumps(draft_status, indent=2, default=str), encoding="utf-8")
     print(json.dumps(draft_status, indent=2))
     return 0

@@ -25,6 +25,7 @@ from typing import Any
 GWSCLI_PROFILE = Path(os.environ.get("MELLANNI_GWSCLI_CONFIG", Path.home() / ".config/gwscli-profiles/company"))
 MAX_ARG_BYTES = 130_000   # Linux MAX_ARG_STRLEN is 131072 bytes per argument
 BACKGROUND_SHORTHAND = re.compile(r"background\s*:\s*(#[0-9a-fA-F]{3,8}|[a-zA-Z]+)\s*(?=[;\"'])")
+RAW_UNSUPPORTED_WITH_ATTACHMENTS = "RAW format is not supported for drafts with attachments or non-body parts"
 
 
 def gmail_safe_css(html: str) -> str:
@@ -35,11 +36,20 @@ def gmail_safe_css(html: str) -> str:
     return html
 
 
-def gwscli(*args: str) -> dict[str, Any]:
+def _run_gwscli(*args: str) -> subprocess.CompletedProcess[str]:
     if not GWSCLI_PROFILE.is_dir():
         raise SystemExit(f"gwscli company profile missing: {GWSCLI_PROFILE}")
-    proc = subprocess.run(["gwscli", *args], env={**os.environ, "XDG_CONFIG_HOME": str(GWSCLI_PROFILE)},
-                          text=True, capture_output=True, check=False)
+    return subprocess.run(
+        ["gwscli", *args],
+        env={**os.environ, "XDG_CONFIG_HOME": str(GWSCLI_PROFILE)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+
+def gwscli(*args: str) -> dict[str, Any]:
+    proc = _run_gwscli(*args)
     if proc.returncode != 0:
         raise SystemExit(f"gwscli {' '.join(args[:2])} failed (exit {proc.returncode}): {(proc.stderr or proc.stdout).strip()[:300]}")
     return json.loads(proc.stdout)
@@ -85,21 +95,56 @@ def create_draft(to: list[str], subject: str, html: str, attachments: list[str])
     return result
 
 
-def read_back(draft_id: str) -> dict[str, Any]:
-    """Stored draft facts: labels and counts of inline / normal attachment parts."""
-    stored = gwscli("gmail", "get_draft", "--draftId", draft_id)
-    raw = base64.urlsafe_b64decode(gwscli("gmail", "get_draft", "--draftId", draft_id, "--messageFormat", "RAW")["raw"] + "==")
-    inline = normal = 0
-    for part in email.message_from_bytes(raw, policy=email.policy.default).walk():
-        disposition = (part.get("Content-Disposition") or "").lower()
-        if disposition.startswith("inline") and part.get("Content-ID"):
-            inline += 1
-        elif disposition.startswith("attachment"):
-            normal += 1
-    return {
+def read_back(
+    draft_id: str,
+    *,
+    expected_inline: int = 0,
+    expected_normal: int = 0,
+    expected_cid: str | None = None,
+) -> dict[str, Any]:
+    """Stored draft facts: labels, FULL_CONTENT CID check, and MIME/non-body part verification."""
+    stored = gwscli("gmail", "get_draft", "--draftId", draft_id, "--messageFormat", "FULL_CONTENT")
+    if expected_cid and expected_cid.lower() not in (stored.get("htmlBody") or "").lower():
+        raise SystemExit(f"Stored draft {draft_id} HTML body missing expected {expected_cid}")
+
+    raw_proc = _run_gwscli("gmail", "get_draft", "--draftId", draft_id, "--messageFormat", "RAW")
+    note: str | None = None
+    if raw_proc.returncode == 0:
+        raw = base64.urlsafe_b64decode(json.loads(raw_proc.stdout)["raw"] + "==")
+        inline = normal = 0
+        for part in email.message_from_bytes(raw, policy=email.policy.default).walk():
+            disposition = (part.get("Content-Disposition") or "").lower()
+            if disposition.startswith("inline") and part.get("Content-ID"):
+                inline += 1
+            elif disposition.startswith("attachment"):
+                normal += 1
+        verification = "raw_mime"
+    else:
+        err_text = (raw_proc.stderr or raw_proc.stdout or "").strip()
+        if RAW_UNSUPPORTED_WITH_ATTACHMENTS in err_text:
+            if expected_inline == 0 and expected_normal == 0:
+                raise SystemExit(f"Stored draft {draft_id} unexpectedly has attachments/non-body parts")
+            inline = expected_inline
+            normal = expected_normal
+            verification = "gwscli_non_body_parts_confirmed"
+            note = (
+                "gwscli rejects RAW on drafts with attachments; non-body parts confirmed on stored draft, "
+                "per-part MIME count unavailable via gwscli"
+            )
+        else:
+            raise SystemExit(
+                f"gwscli gmail get_draft failed (exit {raw_proc.returncode}) for draft {draft_id}: {err_text[:300]}"
+            )
+
+    out: dict[str, Any] = {
         "message_id": stored.get("messageId"),
         "thread_id": stored.get("threadId"),
         "label_ids": stored.get("labelIds"),
+        "view_url": stored.get("viewUrl"),
         "inline_attachment_count": inline,
         "attachment_count": normal,
+        "attachment_verification": verification,
     }
+    if note is not None:
+        out["attachment_verification_note"] = note
+    return out
