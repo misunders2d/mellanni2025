@@ -95,6 +95,19 @@ def create_draft(to: list[str], subject: str, html: str, attachments: list[str])
     return result
 
 
+def cid_reference_present(html: str, expected_cid: str) -> bool:
+    """True when html contains expected_cid, allowing Gmail's stored-draft CID suffix.
+
+    Gmail may rewrite an inline reference such as src="cid:att0" to
+    src="cid:att0_2c09d14665b600f8" when it stores the draft.
+    """
+    if expected_cid.endswith('"'):
+        pattern = re.escape(expected_cid[:-1]) + r'(?:_[0-9a-f]+)?"'
+    else:
+        pattern = re.escape(expected_cid)
+    return re.search(pattern, html, flags=re.IGNORECASE) is not None
+
+
 def read_back(
     draft_id: str,
     *,
@@ -104,7 +117,7 @@ def read_back(
 ) -> dict[str, Any]:
     """Stored draft facts: labels, FULL_CONTENT CID check, and MIME/non-body part verification."""
     stored = gwscli("gmail", "get_draft", "--draftId", draft_id, "--messageFormat", "FULL_CONTENT")
-    if expected_cid and expected_cid.lower() not in (stored.get("htmlBody") or "").lower():
+    if expected_cid and not cid_reference_present(stored.get("htmlBody") or "", expected_cid):
         raise SystemExit(f"Stored draft {draft_id} HTML body missing expected {expected_cid}")
 
     raw_proc = _run_gwscli("gmail", "get_draft", "--draftId", draft_id, "--messageFormat", "RAW")
